@@ -1,11 +1,20 @@
 # 淘宝京东抢购工具
-    支持windows网页抢购京东或淘宝商品，可以自动提交订单，但不能自动付款
-    项目更新时间：2024.10.30
+
+项目开源地址：https://github.com/HanphoneJan/AutoBuy.git
+
+项目更新时间：2024.10.30
+
+支持windows网页抢购京东或淘宝商品，可以自动提交订单，但不能自动付款
+
+
+
 ## 我的开发环境配置
- windows11/10，pycharm(professional)
- python3.11
- chrome,chromedriver
- 库：selenium  使用命令行安装库：pip install selenium
+
+windows11/10，pycharm(professional)，python3.11
+
+chrome,chromedriver 
+
+库：selenium  可以使用命令行安装库：pip install selenium
 
 ## 代码打包
 
