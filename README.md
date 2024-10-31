@@ -2,7 +2,7 @@
 
 项目开源地址：https://github.com/HanphoneJan/AutoBuy.git
 
-项目更新时间：2024.10.30
+项目更新时间：2024.10.31
 
 支持windows网页抢购京东或淘宝商品，可以自动提交订单，但不能自动付款
 
