@@ -8,6 +8,9 @@ now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
 mstime = "2024-10-30 19:49:00.000000"
 #print(mstime)
 #mstime = input("请输入时间: ")
+mstime_datetime = datetime.datetime.strptime(mstime, "%Y-%m-%d %H:%M:%S.%f")
+mstime_datetime = mstime_datetime - datetime.timedelta(seconds=0.5)
+mstime = mstime_datetime.strftime('%Y-%m-%d %H:%M:%S.%f')
 
 # 选择使用的浏览器，如果没有Chrome浏览器可以更改其他浏览器，需要相应的driver
 WebBrowser = webdriver.Chrome()
@@ -62,9 +65,14 @@ while True:
                 if WebBrowser.find_element(By.CLASS_NAME, "checkout-submit"):
                     WebBrowser.find_element(By.CLASS_NAME,"checkout-submit").click()
                     print(f"抢购成功，请尽快付款")
+                    now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
                     print(now)
+                    print(f"5秒后自动关闭程序")
+                    time.sleep(5)
                     break
             except:
                 print(f"抢购失败")
                 break
-        time.sleep(0.01)
+        time.sleep(0.001)
+        break
+exit()
