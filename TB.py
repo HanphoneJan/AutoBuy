@@ -5,7 +5,7 @@ from selenium.webdriver.common.by import By  # 加载所需的库
 
 # 首先我们需要设置抢购的时间，格式要按照预设的格式改就可以，个月数的一定在前面加上0，例如 “01”
 now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
-mstime = "2024-10-31 11:34:00.000000"
+mstime = "2024-10-31 11:51:00.000000"
 #print(mstime)
 #mstime = input("请输入时间: ")
 
@@ -62,8 +62,8 @@ while True:
                 print(f"抢购成功，请尽快付款")
                 now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
                 print(now)
-                print(f"5秒后自动关闭程序")
-                time.sleep(5)
+                print(f"20秒后自动关闭程序，请尽快付款")
+                time.sleep(80)
                 break
             except:
                 print(f"抢购失败")
