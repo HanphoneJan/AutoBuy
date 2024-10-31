@@ -6,11 +6,9 @@
 
 支持windows网页抢购京东或淘宝商品，可以自动提交订单，但不能自动付款
 
-
-
 ## 我的开发环境配置
 
-windows11/10，pycharm(professional)，python3.11
+windows11/10，pycharm(professional)，python3.12
 
 chrome,chromedriver 
 

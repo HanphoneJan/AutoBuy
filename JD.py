@@ -5,9 +5,9 @@ from selenium.webdriver.common.by import By  # 加载所需的库
 
 # 首先我们需要设置抢购的时间，格式要按照预设的格式改就可以，个月数的一定在前面加上0，例如 “01”
 now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
-mstime = "2024-10-30 19:49:00.000000"
+mstime = "2024-10-31 20:00:00.000000"
 #print(mstime)
-#mstime = input("请输入时间: ")
+mstime = input("请输入时间: ")
 mstime_datetime = datetime.datetime.strptime(mstime, "%Y-%m-%d %H:%M:%S.%f")
 mstime_datetime = mstime_datetime - datetime.timedelta(seconds=0.5)
 mstime = mstime_datetime.strftime('%Y-%m-%d %H:%M:%S.%f')
@@ -62,7 +62,6 @@ while True:
         # 当当前时间超过了抢购时间就立刻执行下面代码
         while True:
             try:
-                if WebBrowser.find_element(By.CLASS_NAME, "checkout-submit"):
                     WebBrowser.find_element(By.CLASS_NAME,"checkout-submit").click()
                     print(f"抢购成功，请尽快付款")
                     now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
@@ -72,6 +71,7 @@ while True:
                     break
             except:
                 print(f"抢购失败")
+                time.sleep(20)
                 break
         time.sleep(0.001)
         break
