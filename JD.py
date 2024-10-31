@@ -67,8 +67,8 @@ while True:
                     print(f"抢购成功，请尽快付款")
                     now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
                     print(now)
-                    print(f"5秒后自动关闭程序")
-                    time.sleep(5)
+                    print(f"20秒后自动关闭程序，请尽快付款")
+                    time.sleep(20)
                     break
             except:
                 print(f"抢购失败")
