@@ -5,14 +5,11 @@ from selenium.webdriver.common.by import By  # 加载所需的库
 
 # 首先我们需要设置抢购的时间，格式要按照预设的格式改就可以，个月数的一定在前面加上0，例如 “01”
 now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
-mstime = "2024-10-31 20:00:00.000000"
+mstime = "2024-11-01 12:00:00.000000"
 #print(mstime)
 mstime = input("请输入时间: ")
 
-#预留刷新页面的时间
-mstime_datetime = datetime.datetime.strptime(mstime, "%Y-%m-%d %H:%M:%S.%f")
-mstime_datetime = mstime_datetime - datetime.timedelta(seconds=0.5)
-mstime = mstime_datetime.strftime('%Y-%m-%d %H:%M:%S.%f')
+
 
 # 选择使用的浏览器，如果没有Chrome浏览器可以更改其他浏览器，需要driver
 WebBrowser = webdriver.Chrome()
@@ -48,8 +45,25 @@ while True:
         print(f"结算失败")
         break
 
-print(f"到达预定时间将自动开始抢购")
+print(f"测试页面刷新时间")
+num_tests = 5
+total_load_time = 0
+for i in range(num_tests):
+    start_time = time.time()
+    WebBrowser.refresh()
+    end_time = time.time()
+    load_time = end_time - start_time
+    total_load_time += load_time
+    print(f'第{i+1}次加载时间：{load_time}秒')
+average_load_time = total_load_time / num_tests
+print(f'平均加载时间：{average_load_time}秒')
+#预留刷新页面的时间
+mstime_datetime = datetime.datetime.strptime(mstime, "%Y-%m-%d %H:%M:%S.%f")
+mstime_datetime = mstime_datetime - datetime.timedelta(seconds=average_load_time)
+mstime = mstime_datetime.strftime('%Y-%m-%d %H:%M:%S.%f')
 
+print(f"到达预定时间将自动开始抢购")
+'''
 while True:
     now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
     print(now)
@@ -72,3 +86,4 @@ while True:
         time.sleep(0.001)
         break
 exit()
+'''
