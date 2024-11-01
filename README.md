@@ -12,7 +12,10 @@ windows11/10，pycharm(professional)，python3.12
 
 chrome,chromedriver 
 
-库：selenium  可以使用命令行安装库：pip install selenium
+库：selenium  
+可以使用命令行安装库：pip install selenium
+[edge浏览器驱动下载](https://developer.microsoft.com/en-us/microsoft-edge/tools/webdriver/?form=MA13LH)
+[谷歌浏览器驱动下载](https://googlechromelabs.github.io/chrome-for-testing/#canary)
 
 ## 代码打包
 
