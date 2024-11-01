@@ -9,14 +9,20 @@ mstime = "2024-11-01 12:00:00.000000"
 #print(mstime)
 mstime = input("请输入时间: ")
 
-
-
 # 选择使用的浏览器，如果没有Chrome浏览器可以更改其他浏览器，需要driver
-WebBrowser = webdriver.Chrome()
+# 反自动化脚本检测
+options = webdriver.ChromeOptions()
+options.add_argument("--disable-blink-features=AutomationControlled")
+options.add_argument("--headless")
+options.add_argument("--disable-gpu")
+options.add_argument("--no-sandbox")
+options.add_argument("--incognito")
+user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0 Safari/537.36"
+options.add_argument(f'user-agent={user_agent}')
+WebBrowser = webdriver.Chrome(options=options)
 
 # 获取网站
 WebBrowser.get("https://www.taobao.com")
-# 京东：WebBrowser.get("https://www.jd.com")
 time.sleep(2)
 
 # 进入网站后读取登录链接，并扫码登录
@@ -29,15 +35,12 @@ time.sleep(15)
 WebBrowser.get("https://cart.taobao.com/cart.htm")
 print(f"请选购，20秒后自动开始结算")
 time.sleep(20)
-# 京东：WebBrowser.get("https://cart.jd.com/cart_index")
 
 #自动结算
 while True:
     try:
         if WebBrowser.find_element(By.CLASS_NAME, "btn--QDjHtErD"):
             WebBrowser.find_element(By.CLASS_NAME, "btn--QDjHtErD").click()
-            # 京东：if WebBrowser.find_element("link text", "去结算"):
-            #  京东：WebBrowser.find_element("link text", "去结算").click()
             print(f"结算成功")
             break
         # 识别界面中的“结算”按钮并点击
@@ -63,7 +66,8 @@ mstime_datetime = mstime_datetime - datetime.timedelta(seconds=average_load_time
 mstime = mstime_datetime.strftime('%Y-%m-%d %H:%M:%S.%f')
 
 print(f"到达预定时间将自动开始抢购")
-'''
+
+i = 0
 while True:
     now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
     print(now)
@@ -77,13 +81,14 @@ while True:
                 now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
                 print(now)
                 print(f"20秒后自动关闭程序，请尽快付款")
-                time.sleep(20)
                 break
             except:
-                print(f"抢购失败")
-                time.sleep(20)
-                break
-        time.sleep(0.001)
+                if i<100 :
+                    i=i+1
+                    print(f"抢购失败，正在重新尝试")
+                else:
+                    print(f"抢购失败，20秒后自动关闭程序")
+                    break
         break
+time.sleep(20)
 exit()
-'''
