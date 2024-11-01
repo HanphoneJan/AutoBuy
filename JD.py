@@ -1,16 +1,44 @@
 import datetime
 import time
+import requests
 from selenium import webdriver
 from selenium.webdriver.common.by import By  # 加载所需的库
 
 # 首先我们需要设置抢购的时间，格式要按照预设的格式改就可以，个月数的一定在前面加上0，例如 “01”
 now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
-mstime = "2024-10-31 20:00:00.000000"
+mstime = "2024-10-31 22:44:00.000000"
 #print(mstime)
 mstime = input("请输入时间: ")
 mstime_datetime = datetime.datetime.strptime(mstime, "%Y-%m-%d %H:%M:%S.%f")
 mstime_datetime = mstime_datetime - datetime.timedelta(seconds=0.5)
 mstime = mstime_datetime.strftime('%Y-%m-%d %H:%M:%S.%f')
+#print(mstime)
+
+"根据京东时间校准本地时间"
+#从京东服务器获取时间戳
+def jd_time():
+    url = 'https://api.m.jd.com'
+    resp = requests.get(url, verify=False)
+    jd_timestamp = int(resp.headers.get('X-API-Request-Id')[-13:])
+    return jd_timestamp
+
+#获取本地时间戳
+def local_time():
+    local_timestamp = round(time.time() * 1000)
+    return local_timestamp
+
+#计算本地与京东服务器时间差（毫秒）
+def local_jd_time_diff():
+    jd_ts = jd_time()
+    local_ts = local_time()
+    return local_ts - jd_ts
+
+diff = local_jd_time_diff()
+print("时间差（毫秒）：", diff)
+if diff > 1000 or diff < -1000:
+    mstime_datetime = mstime_datetime - datetime.timedelta(milliseconds=diff)
+    mstime = mstime_datetime.strftime('%Y-%m-%d %H:%M:%S.%f')
+    print(mstime)
 
 # 选择使用的浏览器，如果没有Chrome浏览器可以更改其他浏览器，需要相应的driver
 WebBrowser = webdriver.Chrome()
@@ -35,7 +63,7 @@ time.sleep(25)
 
 #print(f"请选购，20秒后自动开始结算")
 print(f"一分钟后将开始尝试提交订单")
-time.sleep(60)
+time.sleep(20)
 
 '''
 #自动结算
