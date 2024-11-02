@@ -1,5 +1,7 @@
 import datetime
 import time
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 from selenium import webdriver
 from selenium.webdriver.common.by import By  # 加载所需的库
 import requests
@@ -68,6 +70,7 @@ total_load_time = 0
 for i in range(num_tests):
     start_time = time.time()
     WebBrowser.refresh()
+    WebDriverWait(WebBrowser, 2).until(EC.presence_of_element_located((By.CLASS_NAME, 'checkout-submit')))
     end_time = time.time()
     load_time = end_time - start_time
     total_load_time += load_time
@@ -75,11 +78,11 @@ for i in range(num_tests):
     time.sleep(15)
 average_load_time = total_load_time / num_tests
 print(f'平均加载时间：{average_load_time}秒')
-if average_load_time < 0.6:
-    average_load_time = 0.6
+if average_load_time < 0.5:
+    average_load_time = 0.5
 #预留刷新页面的时间
 mstime_datetime = datetime.datetime.strptime(mstime, "%Y-%m-%d %H:%M:%S.%f")
-mstime_datetime = mstime_datetime - datetime.timedelta(seconds=average_load_time)
+mstime_datetime = mstime_datetime - datetime.timedelta(seconds=average_load_time-0.1)
 mstime = mstime_datetime.strftime('%Y-%m-%d %H:%M:%S.%f')
 
 "根据京东时间校准本地时间"
@@ -104,7 +107,7 @@ def local_jd_time_diff():
 diff = local_jd_time_diff()
 print("时间差（毫秒）：", diff)
 if diff > 1000 or diff < -1000:
-    mstime_datetime = mstime_datetime - datetime.timedelta(milliseconds=diff)
+    mstime_datetime = mstime_datetime - datetime.timedelta(milliseconds=diff-100)
     mstime = mstime_datetime.strftime('%Y-%m-%d %H:%M:%S.%f')
     print(mstime)
 
@@ -125,6 +128,7 @@ while True:
             except:
                     if i < 10:
                         i = i + 1
+                        time.sleep(1)
                         print(f"抢购失败，正在重新尝试")
                     else:
                         print(f"抢购失败，20秒后自动关闭程序")

@@ -1,20 +1,15 @@
 import time
 import datetime
 import requests
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 from selenium import webdriver
 from selenium.webdriver.common.by import By  # 加载所需的库
 
-url = 'http://api.m.taobao.com/rest/api3.do?api=mtop.common.getTimestamp'
-headers = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 UBrowser/6.2.4098.3 Safari/537.36'}
-response = requests.get(url, headers=headers)
-response_data = response.json()  # 使用json库解析JSON数据
-tb_timestamp = int(response_data['data']['t'])
-print(tb_timestamp)
 
 # 首先我们需要设置抢购的时间，格式要按照预设的格式改就可以，个月数的一定在前面加上0，例如 “01”
 now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
-mstime = "2024-11-01 15:55:00.000000"
+mstime = "2024-11-02 10:48:00.000000"
 #print(mstime)
 mstime = input("请输入时间: ")
 
@@ -64,6 +59,7 @@ total_load_time = 0
 for i in range(num_tests):
     start_time = time.time()
     WebBrowser.refresh()
+    WebDriverWait(WebBrowser, 2).until(EC.presence_of_element_located((By.CLASS_NAME, 'btn--QDjHtErD')))
     end_time = time.time()
     load_time = end_time - start_time
     total_load_time += load_time
@@ -71,23 +67,17 @@ for i in range(num_tests):
     time.sleep(15)
 average_load_time = total_load_time / num_tests
 print(f'平均加载时间：{average_load_time}秒')
-if average_load_time < 0.6:
-    average_load_time = 0.6
+if average_load_time < 0.5:
+    average_load_time = 0.5
 #预留刷新页面的时间
 mstime_datetime = datetime.datetime.strptime(mstime, "%Y-%m-%d %H:%M:%S.%f")
-mstime_datetime = mstime_datetime - datetime.timedelta(seconds=average_load_time)
+mstime_datetime = mstime_datetime - datetime.timedelta(seconds=average_load_time-0.1)
 mstime = mstime_datetime.strftime('%Y-%m-%d %H:%M:%S.%f')
 
 "根据淘宝时间校准本地时间"
 #从淘宝服务器获取时间戳
 def tb_time():
-    url = 'http://api.m.taobao.com/rest/api3.do?api=mtop.common.getTimestamp'
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 UBrowser/6.2.4098.3 Safari/537.36'}
-    response = requests.get(url, headers=headers)
-    response_data = response.json()  # 使用json库解析JSON数据
-    tb_timestamp = int(response_data['data']['t'])
-    return tb_timestamp
-
+    pass
 #获取本地时间戳
 def local_time():
     local_timestamp = round(time.time() * 1000)
@@ -98,14 +88,14 @@ def local_tb_time_diff():
     tb_ts = tb_time()
     local_ts = local_time()
     return local_ts - tb_ts
-
+'''
 diff = local_tb_time_diff()
 print("时间差（毫秒）：", diff)
 if diff > 1000 or diff < -1000:
-    mstime_datetime = mstime_datetime - datetime.timedelta(milliseconds=diff)
+    mstime_datetime = mstime_datetime - datetime.timedelta(milliseconds=diff-100)
     mstime = mstime_datetime.strftime('%Y-%m-%d %H:%M:%S.%f')
     print(mstime)
-
+'''
 print(f"到达预定时间将自动开始抢购")
 
 i = 0
@@ -126,6 +116,7 @@ while True:
             except:
                 if i<10 :
                     i=i+1
+                    time.sleep(1)
                     print(f"抢购失败，正在重新尝试")
                 else:
                     print(f"抢购失败，20秒后自动关闭程序")
