@@ -9,7 +9,7 @@ from selenium.webdriver.common.by import By  # 加载所需的库
 
 # 首先我们需要设置抢购的时间，格式要按照预设的格式改就可以，个月数的一定在前面加上0，例如 “01”
 now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
-mstime = "2024-11-02 10:48:00.000000"
+mstime = "2024-11-03 10:19:00.000000"
 #print(mstime)
 mstime = input("请输入时间: ")
 
@@ -71,7 +71,7 @@ if average_load_time < 0.5:
     average_load_time = 0.5
 #预留刷新页面的时间
 mstime_datetime = datetime.datetime.strptime(mstime, "%Y-%m-%d %H:%M:%S.%f")
-mstime_datetime = mstime_datetime - datetime.timedelta(seconds=average_load_time-0.1)
+mstime_datetime = mstime_datetime - datetime.timedelta(seconds=average_load_time-0.05)
 mstime = mstime_datetime.strftime('%Y-%m-%d %H:%M:%S.%f')
 
 "根据淘宝时间校准本地时间"
