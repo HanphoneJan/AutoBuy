@@ -25,8 +25,8 @@ chrome,chromedriver
 
 ```
 pip install pyinstaller
-pyinstaller -F TB.py
-pyinstaller -F -i 图标路径 TB.py
+无图标打包：pyinstaller -F TB.py  
+有图标打包：pyinstaller -F -i 图标路径 TB.py
 ```
 
 ## 使用教程
