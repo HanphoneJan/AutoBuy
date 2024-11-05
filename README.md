@@ -4,7 +4,9 @@
 
 项目更新时间：2024.10.31
 
-支持windows网页抢购京东或淘宝商品，可以自动提交订单，但不能自动付款
+支持windows网页抢购京东或淘宝商品，仅支持能够添加到购物车并进入提交订单页面的商品
+
+可以自动提交订单，但不能自动付款
 
 ## 我的开发环境配置
 
@@ -23,13 +25,13 @@ chrome,chromedriver
 
 ```
 pip install pyinstaller
-pyinstaller -F TB.py
-pyinstaller -F -i 图标路径 TB.py
+无图标打包：pyinstaller -F TB.py  
+有图标打包：pyinstaller -F -i 图标路径 TB.py
 ```
 
 ## 使用教程
 首先请下载最新版谷歌浏览器  [下载链接](https://zh-googe.com/)
-程序运行时请勿关闭窗口
+请提前五分钟启动程序，程序运行时请勿关闭窗口
 
 ### 淘宝抢购
 打开淘宝抢购.exe文件
