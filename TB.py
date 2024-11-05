@@ -9,13 +9,16 @@ from selenium.webdriver.common.by import By  # 加载所需的库
 
 # 首先我们需要设置抢购的时间，格式要按照预设的格式改就可以，个月数的一定在前面加上0，例如 “01”
 now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
-mstime = "2024-11-03 10:19:00.000000"
+mstime = "2024-11-05 12:00:00.000000"
 #print(mstime)
 mstime = input("请输入时间: ")
 
 # 选择使用的浏览器，如果没有Chrome浏览器可以更改其他浏览器，需要driver
 # 反自动化脚本检测
 options = webdriver.ChromeOptions()
+options.add_experimental_option("excludeSwitches", ['enable-automation'])
+# 取消“Chrome正受到自动测试软件的控制”和“请停用以开发者模式运行的扩展程序”
+options.add_argument('--disable-blink-features')
 options.add_argument("--disable-blink-features=AutomationControlled")
 #options.add_argument("--headless")
 options.add_argument("--disable-gpu")
@@ -71,7 +74,7 @@ if average_load_time < 0.5:
     average_load_time = 0.5
 #预留刷新页面的时间
 mstime_datetime = datetime.datetime.strptime(mstime, "%Y-%m-%d %H:%M:%S.%f")
-mstime_datetime = mstime_datetime - datetime.timedelta(seconds=average_load_time-0.05)
+mstime_datetime = mstime_datetime - datetime.timedelta(seconds=average_load_time-0.1)
 mstime = mstime_datetime.strftime('%Y-%m-%d %H:%M:%S.%f')
 
 "根据淘宝时间校准本地时间"
@@ -108,6 +111,7 @@ while True:
             try:
                 WebBrowser.refresh()
                 WebBrowser.find_element(By.CLASS_NAME,"btn--QDjHtErD").click()
+
                 print(f"抢购成功，请尽快付款")
                 now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
                 print(now)
