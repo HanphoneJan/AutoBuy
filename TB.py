@@ -9,7 +9,7 @@ from selenium.webdriver.common.by import By  # 加载所需的库
 
 # 首先我们需要设置抢购的时间，格式要按照预设的格式改就可以，个月数的一定在前面加上0，例如 “01”
 now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
-mstime = "2024-11-05 12:00:00.000000"
+mstime = "2024-11-18 12:00:00.000000"
 #print(mstime)
 mstime = input("请输入时间: ")
 
@@ -18,10 +18,9 @@ mstime = input("请输入时间: ")
 options = webdriver.ChromeOptions()
 options.add_experimental_option("excludeSwitches", ['enable-automation'])
 # 取消“Chrome正受到自动测试软件的控制”和“请停用以开发者模式运行的扩展程序”
-options.add_argument('--disable-blink-features')
 options.add_argument("--disable-blink-features=AutomationControlled")
 #options.add_argument("--headless")
-options.add_argument("--disable-gpu")
+#options.add_argument("--disable-gpu")
 options.add_argument("--no-sandbox")
 options.add_argument("--incognito")
 user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0 Safari/537.36"
@@ -30,7 +29,7 @@ WebBrowser = webdriver.Chrome(options=options)
 
 # 获取网站
 WebBrowser.get("https://www.taobao.com")
-time.sleep(2)
+#time.sleep(2)
 
 # 进入网站后读取登录链接，并扫码登录
 WebBrowser.find_element("link text", "亲，请登录").click()
