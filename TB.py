@@ -1,129 +1,197 @@
-import time
-import datetime
-import requests
+import threading
+import logging
+from selenium import webdriver
+from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium import webdriver
-from selenium.webdriver.common.by import By  # 加载所需的库
+from selenium.common.exceptions import (
+    NoSuchElementException, TimeoutException,
+    ElementNotVisibleException, ElementClickInterceptedException,
+    StaleElementReferenceException
+)
+from selenium.webdriver.chrome.options import Options
+
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 
-# 首先我们需要设置抢购的时间，格式要按照预设的格式改就可以，个月数的一定在前面加上0，例如 “01”
-now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
-mstime = "2024-11-18 12:00:00.000000"
-#print(mstime)
-mstime = input("请输入时间: ")
+class TaobaoSeckill:
+    def __init__(self):
+        self.driver = None
+        self.main_thread = None
+        self.confirm_thread = None
+        self.running = False  # 运行状态标志
+        self.lock = threading.Lock()  # 线程锁确保安全
 
-# 选择使用的浏览器，如果没有Chrome浏览器可以更改其他浏览器，需要driver
-# 反自动化脚本检测
-options = webdriver.ChromeOptions()
-options.add_experimental_option("excludeSwitches", ['enable-automation'])
-# 取消“Chrome正受到自动测试软件的控制”和“请停用以开发者模式运行的扩展程序”
-options.add_argument("--disable-blink-features=AutomationControlled")
-#options.add_argument("--headless")
-#options.add_argument("--disable-gpu")
-options.add_argument("--no-sandbox")
-options.add_argument("--incognito")
-user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0 Safari/537.36"
-options.add_argument(f'user-agent={user_agent}')
-WebBrowser = webdriver.Chrome(options=options)
+    def _init_browser(self):
+        """初始化浏览器配置，增强反检测能力"""
+        chrome_options = Options()
+        # 禁用自动化控制特征
+        chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        chrome_options.add_experimental_option("useAutomationExtension", False)
+        chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+        # 浏览器参数配置
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--no-sandbox")
+        # chrome_options.add_argument("--incognito")
+        self.driver = webdriver.Chrome(options=chrome_options)
+        # 移除webdriver特征
+        self.driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+            "source": """
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined
+                })
+            """
+        })
+        self.driver.maximize_window()
+        logger.info("浏览器初始化完成")
 
-# 获取网站
-WebBrowser.get("https://www.taobao.com")
-#time.sleep(2)
+    def _start_confirm_thread(self):
+        """启动确认订单高频点击线程"""
 
-# 进入网站后读取登录链接，并扫码登录
-WebBrowser.find_element("link text", "亲，请登录").click()
-# 京东：WebBrowser.find_element("link text","你好，请登录").click()
-print(f"请扫码登录，15秒后将跳转")
-time.sleep(15)
+        def confirm_task():
+            while self._is_running():
+                try:
+                    # 尝试定位提交订单按钮
+                    submit_btn = WebDriverWait(self.driver, 1, 0.01).until(
+                        EC.element_to_be_clickable((By.CSS_SELECTOR, ".go-btn"))
+                    )
+                    # 多方式尝试点击
+                    for _ in range(3):
+                        try:
+                            self.driver.execute_script("arguments[0].click();", submit_btn)
+                            logger.info("高频线程: 成功点击提交订单按钮")
+                            break
+                        except:
+                            pass
+                except (NoSuchElementException, TimeoutException):
+                    pass
+                except (ElementNotVisibleException, ElementClickInterceptedException):
+                    logger.warning("高频线程: 提交按钮不可见或被遮挡")
+                except StaleElementReferenceException:
+                    logger.warning("高频线程: 提交按钮元素已失效，重新查找")
+                except Exception as e:
+                    logger.error(f"高频线程错误: {str(e)}")
 
-# 登录后直接转跳到购物车页面
-WebBrowser.get("https://cart.taobao.com/cart.htm")
-print(f"请选购，20秒后自动开始结算")
-time.sleep(20)
+        with self.lock:
+            if not self.confirm_thread or not self.confirm_thread.is_alive():
+                self.confirm_thread = threading.Thread(target=confirm_task)
+                self.confirm_thread.daemon = True
+                self.confirm_thread.start()
+                logger.info("订单确认线程已启动")
 
-#自动结算
-while True:
-    try:
-        if WebBrowser.find_element(By.CLASS_NAME, "btn--QDjHtErD"):
-            WebBrowser.find_element(By.CLASS_NAME, "btn--QDjHtErD").click()
-            print(f"结算成功")
-            break
-        # 识别界面中的“结算”按钮并点击
-    except:
-        print(f"结算失败")
-        break
-
-time.sleep(15)
-print(f"测试页面刷新时间")
-num_tests = 3
-total_load_time = 0
-for i in range(num_tests):
-    start_time = time.time()
-    WebBrowser.refresh()
-    WebDriverWait(WebBrowser, 2).until(EC.presence_of_element_located((By.CLASS_NAME, 'btn--QDjHtErD')))
-    end_time = time.time()
-    load_time = end_time - start_time
-    total_load_time += load_time
-    print(f'第{i+1}次加载时间：{load_time}秒')
-    time.sleep(15)
-average_load_time = total_load_time / num_tests
-print(f'平均加载时间：{average_load_time}秒')
-if average_load_time < 0.5:
-    average_load_time = 0.5
-#预留刷新页面的时间
-mstime_datetime = datetime.datetime.strptime(mstime, "%Y-%m-%d %H:%M:%S.%f")
-mstime_datetime = mstime_datetime - datetime.timedelta(seconds=average_load_time-0.1)
-mstime = mstime_datetime.strftime('%Y-%m-%d %H:%M:%S.%f')
-
-"根据淘宝时间校准本地时间"
-#从淘宝服务器获取时间戳
-def tb_time():
-    pass
-#获取本地时间戳
-def local_time():
-    local_timestamp = round(time.time() * 1000)
-    return local_timestamp
-
-#计算本地与淘宝服务器时间差（毫秒）
-def local_tb_time_diff():
-    tb_ts = tb_time()
-    local_ts = local_time()
-    return local_ts - tb_ts
-'''
-diff = local_tb_time_diff()
-print("时间差（毫秒）：", diff)
-if diff > 1000 or diff < -1000:
-    mstime_datetime = mstime_datetime - datetime.timedelta(milliseconds=diff-100)
-    mstime = mstime_datetime.strftime('%Y-%m-%d %H:%M:%S.%f')
-    print(mstime)
-'''
-print(f"到达预定时间将自动开始抢购")
-
-i = 0
-while True:
-    now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
-    #print(now)
-    if now >= mstime:
-        # 当当前时间超过了抢购时间就立刻执行下面代码
-        while True:
+    def _main_monitor_task(self):
+        """主监控线程: 负责结算按钮检测与点击"""
+        while self._is_running():
             try:
-                WebBrowser.refresh()
-                WebBrowser.find_element(By.CLASS_NAME,"btn--QDjHtErD").click()
+                # 尝试定位结算按钮
+                settle_btn = self.driver.find_element(By.CLASS_NAME, "btn--QDjHtErD")
+                btn_text = settle_btn.text.strip()
+                logger.info(f"主线程: 当前结算按钮状态 - {btn_text}")
 
-                print(f"抢购成功，请尽快付款")
-                now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
-                print(now)
-                print(f"20秒后自动关闭程序，请尽快付款")
-                break
-            except:
-                if i<10 :
-                    i=i+1
-                    time.sleep(1)
-                    print(f"抢购失败，正在重新尝试")
-                else:
-                    print(f"抢购失败，20秒后自动关闭程序")
-                    break
-        break
-time.sleep(20)
-exit()
+                # 检测是否已进入订单确认页
+                try:
+                    self.driver.find_element(By.CSS_SELECTOR, ".go-btn")
+                    self._start_confirm_thread()
+                    continue
+                except NoSuchElementException:
+                    pass
+
+                # 尝试点击结算按钮
+                if btn_text in ["结算", "立即购买"]:
+                    logger.info(f"主线程: 尝试点击{btn_text}按钮")
+                    for _ in range(2):
+                        try:
+                            settle_btn.click()
+                            logger.info("主线程: 成功点击结算按钮(常规方式)")
+                            break
+                        except:
+                            try:
+                                self.driver.execute_script("arguments[0].click();", settle_btn)
+                                logger.info("主线程: 成功点击结算按钮(JS方式)")
+                                break
+                            except Exception as e:
+                                logger.warning(f"主线程: 点击失败重试 - {str(e)}")
+
+            except NoSuchElementException:
+                logger.warning("主线程: 未找到结算按钮，可能页面未加载")
+            except StaleElementReferenceException:
+                logger.warning("主线程: 结算按钮元素已失效，重新查找")
+            except Exception as e:
+                logger.error(f"主线程错误: {str(e)}")
+
+    def _is_running(self):
+        """线程安全地检查运行状态"""
+        with self.lock:
+            return self.running
+
+    def start(self):
+        """启动抢购流程"""
+        # 初始化浏览器
+        self._init_browser()
+
+        # 导航到购物车页面
+        self.driver.get("https://cart.taobao.com/cart.htm")
+        logger.info("已导航到淘宝购物车页面")
+
+        # 用户准备阶段
+        input("请在浏览器中完成登录并勾选需要抢购的商品，准备就绪后按回车键开始抢购...")
+
+        # 预热页面
+        logger.info("开始页面预热...")
+        for i in range(2):
+            self.driver.refresh()
+            try:
+                WebDriverWait(self.driver, 2).until(EC.presence_of_element_located((By.CLASS_NAME, 'btn--QDjHtErD')))
+            except TimeoutException:
+                logger.warning(f"第{i + 1}次刷新后未找到结算按钮")
+            logger.info(f"第{i + 1}次刷新完成")
+
+        # 启动抢购线程
+        with self.lock:
+            self.running = True
+
+        self.main_thread = threading.Thread(target=self._main_monitor_task)
+        self.main_thread.daemon = True
+        self.main_thread.start()
+        logger.info("抢购监控线程已启动")
+
+        # 等待用户终止
+        input("抢购程序已启动，按回车键停止...")
+        self.stop()
+
+    def stop(self):
+        """停止所有任务并清理资源"""
+        logger.info("开始停止所有任务...")
+        with self.lock:
+            self.running = False
+
+        # 等待线程结束
+        if self.main_thread and self.main_thread.is_alive():
+            self.main_thread.join(timeout=2)
+        if self.confirm_thread and self.confirm_thread.is_alive():
+            self.confirm_thread.join(timeout=2)
+
+        self._tear_down()
+
+    def _tear_down(self):
+        """清理浏览器资源"""
+        if self.driver:
+            logger.info("关闭浏览器...")
+            self.driver.quit()
+        logger.info("抢购程序已结束")
+
+
+if __name__ == "__main__":
+    try:
+        seckill = TaobaoSeckill()
+        seckill.start()
+    except Exception as e:
+        logger.critical(f"程序崩溃: {str(e)}", exc_info=True)
+        if 'seckill' in locals() and seckill.driver:
+            seckill.driver.quit()

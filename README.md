@@ -8,6 +8,9 @@
 
 可以自动提交订单，但不能自动付款
 
+京东移动端网址：https://m.jd.com/
+淘宝移动端网址：https://main.m.taobao.com/
+
 ## 我的开发环境配置
 
 windows11/10，pycharm(professional)，python3.12
@@ -17,7 +20,7 @@ chrome,chromedriver
 库：selenium  
 可以使用命令行安装库：pip install selenium
 [edge浏览器驱动下载](https://developer.microsoft.com/en-us/microsoft-edge/tools/webdriver/?form=MA13LH)
-[谷歌浏览器驱动下载](https://googlechromelabs.github.io/chrome-for-testing/#canary)
+[谷歌浏览器驱动下载](https://googlechromelabs.github.io/chrome-for-testing/)
 
 ## 代码打包
 
