@@ -6,6 +6,7 @@ requires-python = ">=3.8"
 dependencies = [
     "selenium>=4.0.0",
     "requests>=2.28.0",
+    "flask>=3.0.0",
 ]
 
 [project.optional-dependencies]
