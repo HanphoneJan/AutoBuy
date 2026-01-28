@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>京东抢购 - 自动抢购工具</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <nav>
+                <a href="/" class="nav-link">首页</a>
+                <span class="divider">|</span>
+                <span class="nav-link active">京东抢购</span>
+            </nav>
+            <h1>📦 京东自动抢购</h1>
+        </header>
+
+        <main>
+            <div class="form-section">
+                <h2>设置抢购时间</h2>
+                <div class="time-inputs">
+                    <div class="form-group">
+                        <label for="targetDate">日期</label>
+                        <input type="date" id="targetDate">
+                    </div>
+                    <div class="form-group">
+                        <label for="targetHour">时</label>
+                        <select id="targetHour"></select>
+                    </div>
+                    <div class="form-group">
+                        <label for="targetMinute">分</label>
+                        <select id="targetMinute"></select>
+                    </div>
+                    <div class="form-group">
+                        <label for="targetSecond">秒</label>
+                        <select id="targetSecond"></select>
+                    </div>
+                    <div class="form-group">
+                        <label for="targetMicrosecond">毫秒</label>
+                        <select id="targetMicrosecond">
+                            <option value="0">000</option>
+                            <option value="100">100</option>
+                            <option value="200">200</option>
+                            <option value="300">300</option>
+                            <option value="400">400</option>
+                            <option value="500" selected>500</option>
+                            <option value="600">600</option>
+                            <option value="700">700</option>
+                            <option value="800">800</option>
+                            <option value="900">900</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="quick-select">
+                    <button type="button" onclick="quickSelect(1)" class="btn btn-secondary">明天</button>
+                    <button type="button" onclick="quickSelect(0)" class="btn btn-secondary">今天</button>
+                </div>
+                <button onclick="startJD()" class="btn btn-primary" id="startBtn">开始抢购</button>
+                <button onclick="stopTask()" class="btn btn-danger" id="stopBtn" disabled>停止</button>
+            </div>
+
+            <div class="log-section">
+                <h2>
+                    实时日志
+                    <span id="status" class="status-badge"></span>
+                </h2>
+                <div id="logContainer" class="log-container">
+                    <div class="log-entry"><span class="log-time">--:--:--</span>等待开始...</div>
+                </div>
+            </div>
+
+            <div class="info-box">
+                <h3>使用说明</h3>
+                <ol>
+                    <li>选择抢购日期和时间</li>
+                    <li>可使用快捷按钮快速选择今天或明天</li>
+                    <li>点击"开始抢购"按钮</li>
+                    <li>在弹出的浏览器中扫码登录</li>
+                    <li>登录后等待系统自动跳转</li>
+                    <li>等待到达抢购时间，系统自动提交订单</li>
+                </ol>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // 初始化时间选择器
+        function initTimeSelectors() {
+            // 设置默认日期为明天
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            document.getElementById('targetDate').value = tomorrow.toISOString().split('T')[0];
+
+            // 初始化小时
+            const hourSelect = document.getElementById('targetHour');
+            for (let i = 0; i < 24; i++) {
+                const option = document.createElement('option');
+                option.value = String(i).padStart(2, '0');
+                option.text = String(i).padStart(2, '0');
+                hourSelect.appendChild(option);
+            }
+
+            // 初始化分钟
+            const minuteSelect = document.getElementById('targetMinute');
+            for (let i = 0; i < 60; i++) {
+                const option = document.createElement('option');
+                option.value = String(i).padStart(2, '0');
+                option.text = String(i).padStart(2, '0');
+                minuteSelect.appendChild(option);
+            }
+
+            // 初始化秒
+            const secondSelect = document.getElementById('targetSecond');
+            for (let i = 0; i < 60; i++) {
+                const option = document.createElement('option');
+                option.value = String(i).padStart(2, '0');
+                option.text = String(i).padStart(2, '0');
+                secondSelect.appendChild(option);
+            }
+        }
+
+        // 快速选择今天或明天
+        function quickSelect(days) {
+            const date = new Date();
+            date.setDate(date.getDate() + days);
+            document.getElementById('targetDate').value = date.toISOString().split('T')[0];
+        }
+
+        // 获取格式化的时间字符串
+        function getFormattedTime() {
+            const date = document.getElementById('targetDate').value;
+            const hour = document.getElementById('targetHour').value;
+            const minute = document.getElementById('targetMinute').value;
+            const second = document.getElementById('targetSecond').value;
+            const microsecond = document.getElementById('targetMicrosecond').value;
+
+            if (!date) {
+                alert('请选择日期');
+                return null;
+            }
+
+            return `${date} ${hour}:${minute}:${second}.${microsecond}000`;
+        }
+
+        // 页面加载时初始化
+        window.onload = function() {
+            initTimeSelectors();
+        };
+    </script>
+    <script src="/static/js/jd.js"></script>
+</body>
+</html>

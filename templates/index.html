@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>自动抢购工具</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🛒 自动抢购工具</h1>
+            <p class="subtitle">支持京东、淘宝自动抢购</p>
+        </header>
+
+        <main>
+            <div class="form-section">
+                <h2>选择平台</h2>
+                <div class="platform-selector">
+                    <label class="platform-option">
+                        <input type="radio" name="platform" value="jd" checked onchange="updatePlatform()">
+                        <div class="platform-card-inline jd">
+                            <div class="platform-icon">📦</div>
+                            <div class="platform-info">
+                                <h3>京东</h3>
+                                <p>定时抢购，自动时间校准</p>
+                            </div>
+                        </div>
+                    </label>
+                    <label class="platform-option">
+                        <input type="radio" name="platform" value="tb" onchange="updatePlatform()">
+                        <div class="platform-card-inline tb">
+                            <div class="platform-icon">🛍️</div>
+                            <div class="platform-info">
+                                <h3>淘宝</h3>
+                                <p>高频点击，快速结算</p>
+                            </div>
+                        </div>
+                    </label>
+                </div>
+            </div>
+
+            <div class="form-section" id="timeSection">
+                <h2>设置抢购时间</h2>
+                <div class="time-inputs">
+                    <div class="form-group">
+                        <label for="targetDate">日期</label>
+                        <input type="date" id="targetDate">
+                    </div>
+                    <div class="form-group">
+                        <label for="targetHour">时</label>
+                        <select id="targetHour"></select>
+                    </div>
+                    <div class="form-group">
+                        <label for="targetMinute">分</label>
+                        <select id="targetMinute"></select>
+                    </div>
+                    <div class="form-group">
+                        <label for="targetSecond">秒</label>
+                        <select id="targetSecond"></select>
+                    </div>
+                    <div class="form-group">
+                        <label for="targetMicrosecond">毫秒</label>
+                        <select id="targetMicrosecond">
+                            <option value="0">000</option>
+                            <option value="100">100</option>
+                            <option value="200">200</option>
+                            <option value="300">300</option>
+                            <option value="400">400</option>
+                            <option value="500" selected>500</option>
+                            <option value="600">600</option>
+                            <option value="700">700</option>
+                            <option value="800">800</option>
+                            <option value="900">900</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="quick-select">
+                    <button type="button" onclick="quickSelect(1)" class="btn btn-secondary">明天</button>
+                    <button type="button" onclick="quickSelect(0)" class="btn btn-secondary">今天</button>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <div class="step-indicator">
+                    <div class="step active" id="step1">
+                        <span class="step-number">1</span>
+                        <span class="step-text">选择平台</span>
+                    </div>
+                    <div class="step" id="step2">
+                        <span class="step-number">2</span>
+                        <span class="step-text">设置时间</span>
+                    </div>
+                    <div class="step" id="step3">
+                        <span class="step-number">3</span>
+                        <span class="step-text">开始任务</span>
+                    </div>
+                    <div class="step" id="step4">
+                        <span class="step-number">4</span>
+                        <span class="step-text">自动抢购</span>
+                    </div>
+                </div>
+                <div class="action-buttons">
+                    <button onclick="startTask()" class="btn btn-primary" id="startBtn">开始抢购</button>
+                    <button onclick="readyTB()" class="btn btn-warning" id="readyBtn" disabled>我已准备好</button>
+                    <button onclick="stopTask()" class="btn btn-danger" id="stopBtn" disabled>停止</button>
+                </div>
+            </div>
+
+            <div class="log-section">
+                <h2>
+                    实时日志
+                    <span id="status" class="status-badge"></span>
+                </h2>
+                <div id="logContainer" class="log-container">
+                    <div class="log-entry"><span class="log-time">--:--:--</span>等待开始...</div>
+                </div>
+            </div>
+
+            <div class="info-box" id="jdInstructions">
+                <h3>京东使用说明</h3>
+                <ol>
+                    <li>选择"京东"平台并设置抢购时间</li>
+                    <li>可使用快捷按钮快速选择今天或明天</li>
+                    <li>点击"开始抢购"按钮</li>
+                    <li>在弹出的浏览器中扫码登录</li>
+                    <li>登录后等待系统自动跳转</li>
+                    <li>等待到达抢购时间，系统自动提交订单</li>
+                </ol>
+            </div>
+
+            <div class="info-box" id="tbInstructions" style="display: none;">
+                <h3>淘宝使用说明</h3>
+                <ol>
+                    <li>选择"淘宝"平台</li>
+                    <li>点击"开始任务"按钮</li>
+                    <li>在弹出的浏览器中登录淘宝账号</li>
+                    <li>进入购物车，勾选需要抢购的商品</li>
+                    <li>点击网页上的"我已准备好"按钮</li>
+                    <li>等待到达抢购时间，系统自动点击结算和提交订单</li>
+                </ol>
+            </div>
+        </main>
+
+        <footer>
+            <p>⚠️ 请遵守各平台使用规则，仅用于学习交流</p>
+            <a href="/help" class="btn-link">使用帮助</a>
+        </footer>
+    </div>
+
+    <script>
+        // 初始化时间选择器
+        function initTimeSelectors() {
+            // 设置默认日期为明天
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            document.getElementById('targetDate').value = tomorrow.toISOString().split('T')[0];
+
+            // 初始化小时
+            const hourSelect = document.getElementById('targetHour');
+            for (let i = 0; i < 24; i++) {
+                const option = document.createElement('option');
+                option.value = String(i).padStart(2, '0');
+                option.text = String(i).padStart(2, '0');
+                hourSelect.appendChild(option);
+            }
+
+            // 初始化分钟
+            const minuteSelect = document.getElementById('targetMinute');
+            for (let i = 0; i < 60; i++) {
+                const option = document.createElement('option');
+                option.value = String(i).padStart(2, '0');
+                option.text = String(i).padStart(2, '0');
+                minuteSelect.appendChild(option);
+            }
+
+            // 初始化秒
+            const secondSelect = document.getElementById('targetSecond');
+            for (let i = 0; i < 60; i++) {
+                const option = document.createElement('option');
+                option.value = String(i).padStart(2, '0');
+                option.text = String(i).padStart(2, '0');
+                secondSelect.appendChild(option);
+            }
+        }
+
+        // 快速选择今天或明天
+        function quickSelect(days) {
+            const date = new Date();
+            date.setDate(date.getDate() + days);
+            document.getElementById('targetDate').value = date.toISOString().split('T')[0];
+        }
+
+        // 获取格式化的时间字符串
+        function getFormattedTime() {
+            const date = document.getElementById('targetDate').value;
+            const hour = document.getElementById('targetHour').value;
+            const minute = document.getElementById('targetMinute').value;
+            const second = document.getElementById('targetSecond').value;
+            const microsecond = document.getElementById('targetMicrosecond').value;
+
+            if (!date) {
+                alert('请选择日期');
+                return null;
+            }
+
+            return `${date} ${hour}:${minute}:${second}.${microsecond}000`;
+        }
+
+        // 更新平台选择
+        function updatePlatform() {
+            const platform = document.querySelector('input[name="platform"]:checked').value;
+            const timeSection = document.getElementById('timeSection');
+            const readyBtn = document.getElementById('readyBtn');
+            const jdInstructions = document.getElementById('jdInstructions');
+            const tbInstructions = document.getElementById('tbInstructions');
+
+            if (platform === 'jd') {
+                timeSection.style.display = 'block';
+                readyBtn.style.display = 'none';
+                jdInstructions.style.display = 'block';
+                tbInstructions.style.display = 'none';
+            } else {
+                timeSection.style.display = 'none';
+                readyBtn.style.display = 'inline-block';
+                jdInstructions.style.display = 'none';
+                tbInstructions.style.display = 'block';
+            }
+        }
+
+        // 页面加载时初始化
+        window.onload = function() {
+            initTimeSelectors();
+            updatePlatform();
+        };
+    </script>
+    <script src="/static/js/seckill.js"></script>
+</body>
+</html>

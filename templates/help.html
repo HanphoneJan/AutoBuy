@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>使用帮助 - 自动抢购工具</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <nav>
+                <a href="/" class="nav-link">首页</a>
+                <span class="divider">|</span>
+                <span class="nav-link active">使用帮助</span>
+            </nav>
+            <h1>📖 使用帮助</h1>
+        </header>
+
+        <main>
+            <div class="help-content">
+                <section class="help-section">
+                    <h2>快速开始</h2>
+                    <div class="step-list">
+                        <div class="step-item">
+                            <div class="step-number">1</div>
+                            <div class="step-content">
+                                <h3>安装依赖</h3>
+                                <p>确保已安装 Python 3.8+，并安装项目依赖：</p>
+                                <code>uv sync</code>
+                            </div>
+                        </div>
+                        <div class="step-item">
+                            <div class="step-number">2</div>
+                            <div class="step-content">
+                                <h3>启动应用</h3>
+                                <p>运行以下命令启动 Web 服务：</p>
+                                <code>uv run app.py</code>
+                            </div>
+                        </div>
+                        <div class="step-item">
+                            <div class="step-number">3</div>
+                            <div class="step-content">
+                                <h3>访问界面</h3>
+                                <p>在浏览器中打开：</p>
+                                <code>http://localhost:5000</code>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="help-section">
+                    <h2>京东抢购说明</h2>
+                    <ul>
+                        <li><strong>时间设置：</strong>格式为 YYYY-MM-DD HH:MM:SS.ffffff，例如：2024-11-01 20:00:00.000000</li>
+                        <li><strong>时间校准：</strong>系统会自动获取京东服务器时间并校准本地时间差</li>
+                        <li><strong>自动跳转：</strong>登录后自动跳转到订单确认页面</li>
+                        <li><strong>精准提交：</strong>到达时间后自动点击提交订单按钮</li>
+                    </ul>
+                </section>
+
+                <section class="help-section">
+                    <h2>淘宝抢购说明</h2>
+                    <ul>
+                        <li><strong>手动准备：</strong>需要手动登录并勾选购物车商品</li>
+                        <li><strong>双线程：</strong>主线程监控结算按钮，高频线程快速点击提交订单</li>
+                        <li><strong>实时监控：</strong>实时检测页面状态并自动操作</li>
+                        <li><strong>多种点击方式：</strong>支持常规点击和 JavaScript 点击</li>
+                    </ul>
+                </section>
+
+                <section class="help-section warning">
+                    <h2>⚠️ 注意事项</h2>
+                    <ul>
+                        <li>请确保已安装 Chrome 浏览器</li>
+                        <li>首次运行可能需要下载 ChromeDriver（程序会自动处理）</li>
+                        <li>请勿用于违规抢购，仅限学习交流使用</li>
+                        <li>建议提前测试登录和页面跳转流程</li>
+                        <li>抢购成功后请尽快付款</li>
+                    </ul>
+                </section>
+
+                <section class="help-section">
+                    <h2>常见问题</h2>
+                    <div class="faq-item">
+                        <h3>Q: 浏览器启动失败怎么办？</h3>
+                        <p>A: 请检查是否安装了 Chrome 浏览器，或尝试更新 ChromeDriver 版本。</p>
+                    </div>
+                    <div class="faq-item">
+                        <h3>Q: 登录二维码扫描后没反应？</h3>
+                        <p>A: 请确保网络连接正常，或尝试刷新页面重新扫描。</p>
+                    </div>
+                    <div class="faq-item">
+                        <h3>Q: 抢购时间已到但没有自动提交？</h3>
+                        <p>A: 检查时间格式是否正确，或查看日志了解具体错误信息。</p>
+                    </div>
+                </section>
+            </div>
+        </main>
+
+        <footer>
+            <a href="/" class="btn btn-link">返回首页</a>
+        </footer>
+    </div>
+</body>
+</html>

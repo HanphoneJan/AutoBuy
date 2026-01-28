@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>淘宝抢购 - 自动抢购工具</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <nav>
+                <a href="/" class="nav-link">首页</a>
+                <span class="divider">|</span>
+                <span class="nav-link active">淘宝抢购</span>
+            </nav>
+            <h1>🛍️ 淘宝自动抢购</h1>
+        </header>
+
+        <main>
+            <div class="form-section">
+                <h2>准备抢购</h2>
+                <div class="step-indicator">
+                    <div class="step active" id="step1">
+                        <span class="step-number">1</span>
+                        <span class="step-text">开始任务</span>
+                    </div>
+                    <div class="step" id="step2">
+                        <span class="step-number">2</span>
+                        <span class="step-text">登录商品</span>
+                    </div>
+                    <div class="step" id="step3">
+                        <span class="step-number">3</span>
+                        <span class="step-text">确认就绪</span>
+                    </div>
+                    <div class="step" id="step4">
+                        <span class="step-number">4</span>
+                        <span class="step-text">自动抢购</span>
+                    </div>
+                </div>
+                <button onclick="startTB()" class="btn btn-primary" id="startBtn">开始任务</button>
+                <button onclick="readyTB()" class="btn btn-warning" id="readyBtn" disabled>我已准备好</button>
+                <button onclick="stopTask()" class="btn btn-danger" id="stopBtn" disabled>停止</button>
+            </div>
+
+            <div class="log-section">
+                <h2>
+                    实时日志
+                    <span id="status" class="status-badge"></span>
+                </h2>
+                <div id="logContainer" class="log-container">
+                    <div class="log-entry"><span class="log-time">--:--:--</span>等待开始...</div>
+                </div>
+            </div>
+
+            <div class="info-box">
+                <h3>使用说明</h3>
+                <ol>
+                    <li>点击"开始任务"按钮</li>
+                    <li>在弹出的浏览器中登录淘宝账号</li>
+                    <li>进入购物车，勾选需要抢购的商品</li>
+                    <li>点击网页上的"我已准备好"按钮</li>
+                    <li>等待到达抢购时间</li>
+                    <li>系统将自动点击结算和提交订单</li>
+                </ol>
+            </div>
+        </main>
+    </div>
+
+    <script src="/static/js/tb.js"></script>
+</body>
+</html>
