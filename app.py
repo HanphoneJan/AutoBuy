@@ -4,16 +4,22 @@ import logging
 from datetime import datetime, timedelta
 import time
 import requests
+import os
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service as ChromeService
+from webdriver_manager.chrome import ChromeDriverManager
 from selenium.common.exceptions import (
     NoSuchElementException, TimeoutException
 )
 import json
 from collections import deque
+
+# 设置项目根目录
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 app = Flask(__name__)
 
@@ -96,7 +102,9 @@ def run_jd_task(task_id, target_time):
         user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0 Safari/537.36"
         options.add_argument(f'user-agent={user_agent}')
 
-        driver = webdriver.Chrome(options=options)
+        # 设置驱动下载到项目目录
+        driver_path = ChromeDriverManager(path=os.path.join(PROJECT_DIR, 'drivers')).install()
+        driver = webdriver.Chrome(service=ChromeService(driver_path), options=options)
         task['driver'] = driver
 
         task_manager.add_log(task_id, "导航到京东首页...")
@@ -299,7 +307,9 @@ def run_tb_task(task_id):
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--no-sandbox")
 
-        driver = webdriver.Chrome(options=chrome_options)
+        # 设置驱动下载到项目目录
+        driver_path = ChromeDriverManager(path=os.path.join(PROJECT_DIR, 'drivers')).install()
+        driver = webdriver.Chrome(service=ChromeService(driver_path), options=chrome_options)
         task['driver'] = driver
 
         driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
