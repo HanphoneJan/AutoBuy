@@ -18,7 +18,7 @@
                 <h2>选择平台</h2>
                 <div class="platform-selector">
                     <label class="platform-option">
-                        <input type="radio" name="platform" value="jd" checked onchange="updatePlatform()">
+                        <input type="radio" name="platform" value="jd" onchange="updatePlatform()">
                         <div class="platform-card-inline jd">
                             <div class="platform-icon">📦</div>
                             <div class="platform-info">
@@ -28,7 +28,7 @@
                         </div>
                     </label>
                     <label class="platform-option">
-                        <input type="radio" name="platform" value="tb" onchange="updatePlatform()">
+                        <input type="radio" name="platform" value="tb" checked onchange="updatePlatform()">
                         <div class="platform-card-inline tb">
                             <div class="platform-icon">🛍️</div>
                             <div class="platform-info">
@@ -82,22 +82,15 @@
             </div>
 
             <div class="form-section">
-                <div class="step-indicator">
-                    <div class="step active" id="step1">
-                        <span class="step-number">1</span>
-                        <span class="step-text">选择平台</span>
+                <div class="progress-container">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
                     </div>
-                    <div class="step" id="step2">
-                        <span class="step-number">2</span>
-                        <span class="step-text">设置时间</span>
-                    </div>
-                    <div class="step" id="step3">
-                        <span class="step-number">3</span>
-                        <span class="step-text">开始任务</span>
-                    </div>
-                    <div class="step" id="step4">
-                        <span class="step-number">4</span>
-                        <span class="step-text">自动抢购</span>
+                    <div class="progress-labels">
+                        <span class="progress-label" id="label1">选择平台</span>
+                        <span class="progress-label" id="label2">设置时间</span>
+                        <span class="progress-label" id="label3">开始任务</span>
+                        <span class="progress-label" id="label4">自动抢购</span>
                     </div>
                 </div>
                 <div class="action-buttons">
@@ -117,7 +110,7 @@
                 </div>
             </div>
 
-            <div class="info-box" id="jdInstructions">
+            <div class="info-box" id="jdInstructions" style="display: none;">
                 <h3>京东使用说明</h3>
                 <ol>
                     <li>选择"京东"平台并设置抢购时间</li>
@@ -129,7 +122,7 @@
                 </ol>
             </div>
 
-            <div class="info-box" id="tbInstructions" style="display: none;">
+            <div class="info-box" id="tbInstructions">
                 <h3>淘宝使用说明</h3>
                 <ol>
                     <li>选择"淘宝"平台</li>
@@ -210,18 +203,15 @@
         // 更新平台选择
         function updatePlatform() {
             const platform = document.querySelector('input[name="platform"]:checked').value;
-            const timeSection = document.getElementById('timeSection');
             const readyBtn = document.getElementById('readyBtn');
             const jdInstructions = document.getElementById('jdInstructions');
             const tbInstructions = document.getElementById('tbInstructions');
 
             if (platform === 'jd') {
-                timeSection.style.display = 'block';
                 readyBtn.style.display = 'none';
                 jdInstructions.style.display = 'block';
                 tbInstructions.style.display = 'none';
-            } else {
-                timeSection.style.display = 'none';
+            } else if (platform === 'tb') {
                 readyBtn.style.display = 'inline-block';
                 jdInstructions.style.display = 'none';
                 tbInstructions.style.display = 'block';
@@ -232,6 +222,7 @@
         window.onload = function() {
             initTimeSelectors();
             updatePlatform();
+            updateSteps(1);
         };
     </script>
     <script src="/static/js/seckill.js"></script>

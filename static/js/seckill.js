@@ -188,16 +188,16 @@ function getStatusText(status) {
 }
 
 function updateSteps(currentStep) {
+    const progressFill = document.getElementById('progressFill');
+    const percentage = ((currentStep - 1) / 3) * 100;
+    progressFill.style.width = percentage + '%';
+
     for (let i = 1; i <= 4; i++) {
-        const step = document.getElementById('step' + i);
-        if (i < currentStep) {
-            step.classList.remove('active');
-            step.classList.add('completed');
-        } else if (i === currentStep) {
-            step.classList.add('active');
-            step.classList.remove('completed');
+        const label = document.getElementById('label' + i);
+        if (i <= currentStep) {
+            label.classList.add('active');
         } else {
-            step.classList.remove('active', 'completed');
+            label.classList.remove('active');
         }
     }
 }
