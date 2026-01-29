@@ -5,6 +5,12 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium import webdriver
 from selenium.webdriver.common.by import By  # 加载所需的库
+from selenium.webdriver.chrome.service import Service as ChromeService
+from webdriver_manager.chrome import ChromeDriverManager
+import os
+
+# 设置项目根目录
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 # 选择使用的浏览器，如果没有Chrome浏览器可以更改其他浏览器，需要driver
@@ -22,7 +28,9 @@ options.add_argument("--no-sandbox")
 options.add_argument("--incognito")
 user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0 Safari/537.36"
 options.add_argument(f'user-agent={user_agent}')
-WebBrowser = webdriver.Chrome(options=options)
+# 设置驱动下载到项目目录
+driver_path = ChromeDriverManager(path=os.path.join(PROJECT_DIR, 'drivers')).install()
+WebBrowser = webdriver.Chrome(service=ChromeService(driver_path), options=options)
 
 # 获取网站
 WebBrowser.get("https://www.taobao.com")

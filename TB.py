@@ -10,6 +10,12 @@ from selenium.common.exceptions import (
     StaleElementReferenceException
 )
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service as ChromeService
+from webdriver_manager.chrome import ChromeDriverManager
+import os
+
+# 设置项目根目录
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # 配置日志
 logging.basicConfig(
@@ -39,7 +45,9 @@ class TaobaoSeckill:
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--no-sandbox")
         # chrome_options.add_argument("--incognito")
-        self.driver = webdriver.Chrome(options=chrome_options)
+        # 设置驱动下载到项目目录
+        driver_path = ChromeDriverManager(path=os.path.join(PROJECT_DIR, 'drivers')).install()
+        self.driver = webdriver.Chrome(service=ChromeService(driver_path), options=chrome_options)
         # 移除webdriver特征
         self.driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
             "source": """
