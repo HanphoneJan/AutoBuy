@@ -132,6 +132,7 @@ dmypy.json
 *.swp
 *.swo
 *~
+.codebuddy/
 
 # OS
 .DS_Store

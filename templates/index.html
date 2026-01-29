@@ -226,11 +226,78 @@
         }
 
         // 页面加载时初始化
-        window.onload = function() {
+        window.onload = async function() {
             initTimeSelectors();
             updatePlatform();
             updateSteps(1);
+            await ensureDriver(); // 确保驱动已下载
         };
+
+        // 确保驱动已下载
+        async function ensureDriver() {
+            const logContainer = document.getElementById('logContainer');
+            const driverMessage = document.createElement('div');
+            driverMessage.className = 'log-entry';
+            driverMessage.innerHTML = `<span class="log-time">${getCurrentTime()}</span>正在准备浏览器驱动...`;
+            logContainer.appendChild(driverMessage);
+            logContainer.scrollTop = logContainer.scrollHeight;
+
+            // 移除初始提示
+            const initialLog = logContainer.querySelector('.log-entry:first-child');
+            if (initialLog && initialLog.textContent.includes('等待开始...')) {
+                initialLog.remove();
+            }
+
+            try {
+                const response = await fetch('/api/driver/download', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    const successMessage = document.createElement('div');
+                    successMessage.className = 'log-entry';
+                    successMessage.innerHTML = `<span class="log-time">${getCurrentTime()}</span>驱动准备完成`;
+                    logContainer.appendChild(successMessage);
+                    logContainer.scrollTop = logContainer.scrollHeight;
+
+                    if (data.path) {
+                        const pathMessage = document.createElement('div');
+                        pathMessage.className = 'log-entry';
+                        pathMessage.style.color = '#1976D2';
+                        pathMessage.innerHTML = `<span class="log-time">${getCurrentTime()}</span>驱动路径: ${data.path}`;
+                        logContainer.appendChild(pathMessage);
+                        logContainer.scrollTop = logContainer.scrollHeight;
+                    }
+                } else {
+                    const errorMessage = document.createElement('div');
+                    errorMessage.className = 'log-entry';
+                    errorMessage.style.color = '#FF5252';
+                    errorMessage.innerHTML = `<span class="log-time">${getCurrentTime()}</span>驱动准备失败: ${data.message}`;
+                    logContainer.appendChild(errorMessage);
+                    logContainer.scrollTop = logContainer.scrollHeight;
+                }
+            } catch (error) {
+                const errorMessage = document.createElement('div');
+                errorMessage.className = 'log-entry';
+                errorMessage.style.color = '#FF5252';
+                errorMessage.innerHTML = `<span class="log-time">${getCurrentTime()}</span>驱动准备失败: ${error.message}`;
+                logContainer.appendChild(errorMessage);
+                logContainer.scrollTop = logContainer.scrollHeight;
+            }
+        }
+
+        function getCurrentTime() {
+            const now = new Date();
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const seconds = String(now.getSeconds()).padStart(2, '0');
+            return `${hours}:${minutes}:${seconds}`;
+        }
     </script>
     <script src="/static/js/seckill.js"></script>
 </body>
