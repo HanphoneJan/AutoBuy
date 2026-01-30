@@ -88,6 +88,7 @@ def run_seckill_task(task_id, platform, target_time=None, login_wait=15):
 
     task['status'] = 'running'
     task['running'] = True
+    task['worker'] = None
 
     def log_callback(message):
         task_manager.add_log(task_id, message)
@@ -95,6 +96,7 @@ def run_seckill_task(task_id, platform, target_time=None, login_wait=15):
     worker = None
     try:
         worker = SeckillWorker(platform, log_callback=log_callback)
+        task['worker'] = worker
         worker.start_seckill(target_time=target_time, login_wait=login_wait)
         task['status'] = 'success'
     except Exception as e:
@@ -102,8 +104,6 @@ def run_seckill_task(task_id, platform, target_time=None, login_wait=15):
         task['status'] = 'error'
     finally:
         task['running'] = False
-        if worker:
-            worker.stop()
 
 
 # 路由定义
@@ -168,18 +168,24 @@ def start_tb():
     return jsonify({'task_id': task_id, 'status': 'started'})
 
 
-@app.route('/api/tb/ready', methods=['POST'])
-def ready_tb():
+@app.route('/api/tasks/<task_id>/confirm', methods=['POST'])
+def confirm_stage(task_id):
+    """用户确认当前阶段，进入下一步"""
     data = request.json
-    task_id = data.get('task_id')
+    stage = data.get('stage')  # 'login' 或 'cart'
     task = task_manager.get_task(task_id)
 
-    if task:
-        task['ready'] = True
-        task_manager.add_log(task_id, "用户已确认准备就绪，开始抢购流程")
-        return jsonify({'status': 'ok'})
+    if not task:
+        return jsonify({'error': '任务不存在'}), 404
 
-    return jsonify({'error': '任务不存在'}), 404
+    if not task.get('worker'):
+        return jsonify({'error': 'Worker未初始化'}), 400
+
+    worker = task['worker']
+    setattr(worker, f'{stage}_confirmed', True)
+    task_manager.add_log(task_id, f"用户已确认{stage}阶段，继续下一步...")
+
+    return jsonify({'status': 'ok'})
 
 
 @app.route('/api/tasks/<task_id>/status')
@@ -208,6 +214,26 @@ def stop_task(task_id):
     task_manager.add_log(task_id, "用户请求停止任务")
 
     return jsonify({'status': 'stopped'})
+
+
+@app.route('/api/tasks/<task_id>/close-browser', methods=['POST'])
+def close_browser(task_id):
+    """关闭浏览器"""
+    task = task_manager.get_task(task_id)
+    if not task:
+        return jsonify({'error': '任务不存在'}), 404
+
+    worker = task.get('worker')
+    if worker and hasattr(worker, 'driver') and worker.driver:
+        try:
+            worker.stop()
+            task_manager.add_log(task_id, "浏览器已关闭")
+            return jsonify({'status': 'ok'})
+        except Exception as e:
+            task_manager.add_log(task_id, f"关闭浏览器失败：{str(e)}")
+            return jsonify({'error': str(e)}), 500
+    else:
+        return jsonify({'error': '浏览器未打开或已关闭'}), 400
 
 
 @app.route('/api/tasks/<task_id>/logs')
