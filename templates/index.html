@@ -130,7 +130,8 @@
                     </div>
                     <div class="action-buttons">
                         <button onclick="startTask()" class="btn btn-primary" id="startBtn">开始抢购</button>
-                        <button onclick="readyTB()" class="btn btn-warning" id="readyBtn" disabled>我已准备好</button>
+                        <button onclick="confirmStage()" class="btn btn-warning" id="confirmBtn" disabled>确认登录</button>
+                        <button onclick="closeBrowser()" class="btn btn-secondary" id="closeBrowserBtn" disabled>关闭浏览器</button>
                         <button onclick="stopTask()" class="btn btn-danger" id="stopBtn" disabled>停止</button>
                     </div>
                 </section>
@@ -210,18 +211,55 @@
         // 更新平台选择
         function updatePlatform() {
             const platform = document.querySelector('input[name="platform"]:checked').value;
-            const readyBtn = document.getElementById('readyBtn');
+            const confirmBtn = document.getElementById('confirmBtn');
             const jdInstructions = document.getElementById('jdInstructions');
             const tbInstructions = document.getElementById('tbInstructions');
 
             if (platform === 'jd') {
-                readyBtn.style.display = 'none';
+                confirmBtn.textContent = '确认登录';
+                confirmBtn.style.display = 'inline-block';
                 jdInstructions.style.display = 'block';
                 tbInstructions.style.display = 'none';
             } else if (platform === 'tb') {
-                readyBtn.style.display = 'inline-block';
+                confirmBtn.textContent = '确认登录';
+                confirmBtn.style.display = 'inline-block';
                 jdInstructions.style.display = 'none';
                 tbInstructions.style.display = 'block';
+            }
+        }
+
+        // 确认当前阶段
+        async function confirmStage() {
+            if (!currentTaskId) {
+                alert('请先开始抢购任务');
+                return;
+            }
+
+            const confirmBtn = document.getElementById('confirmBtn');
+            const stage = confirmBtn.textContent.includes('购物车') ? 'cart' : 'login';
+
+            try {
+                const response = await fetch(`/api/tasks/${currentTaskId}/confirm`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ stage })
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'ok') {
+                    // 更新按钮状态
+                    if (stage === 'login') {
+                        confirmBtn.textContent = '确认购物车';
+                    } else {
+                        confirmBtn.disabled = true;
+                        confirmBtn.textContent = '已确认';
+                    }
+                }
+            } catch (error) {
+                alert('确认失败：' + error.message);
             }
         }
 

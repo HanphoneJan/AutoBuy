@@ -52,7 +52,6 @@ async function startTask() {
                 currentTaskId = data.task_id;
                 document.getElementById('startBtn').disabled = true;
                 document.getElementById('stopBtn').disabled = false;
-                document.getElementById('readyBtn').disabled = false;
                 document.querySelectorAll('input[name="platform"]').forEach(radio => radio.disabled = true);
                 updateStatus('running');
                 updateSteps(3);
@@ -63,29 +62,6 @@ async function startTask() {
         } catch (error) {
             alert('请求失败：' + error.message);
         }
-    }
-}
-
-async function readyTB() {
-    if (!currentTaskId) return;
-
-    try {
-        const response = await fetch('/api/tb/ready', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ task_id: currentTaskId })
-        });
-
-        if (response.ok) {
-            document.getElementById('readyBtn').disabled = true;
-            updateSteps(4);
-        } else {
-            alert(data.error || '确认失败');
-        }
-    } catch (error) {
-        alert('确认失败：' + error.message);
     }
 }
 
@@ -106,6 +82,27 @@ async function stopTask() {
     }
 }
 
+async function closeBrowser() {
+    if (!currentTaskId) return;
+
+    try {
+        const response = await fetch(`/api/tasks/${currentTaskId}/close-browser`, {
+            method: 'POST'
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            addLog('浏览器已关闭');
+            document.getElementById('closeBrowserBtn').disabled = true;
+        } else {
+            alert(data.error || '关闭浏览器失败');
+        }
+    } catch (error) {
+        alert('关闭浏览器失败：' + error.message);
+    }
+}
+
 function startLogStream() {
     if (eventSource) {
         eventSource.close();
@@ -118,9 +115,42 @@ function startLogStream() {
             const log = JSON.parse(event.data);
             addLog(log.message, log.time);
 
-            // 根据日志内容更新步骤
-            if (log.message.includes('订单确认线程已启动')) {
+            // 根据日志内容更新步骤和确认按钮状态
+            if (log.message.includes('等待登录确认')) {
+                const confirmBtn = document.getElementById('confirmBtn');
+                if (confirmBtn) {
+                    confirmBtn.disabled = false;
+                    confirmBtn.textContent = '确认登录';
+                }
+                updateSteps(2);
+            }
+
+            if (log.message.includes('等待购物车确认')) {
+                const confirmBtn = document.getElementById('confirmBtn');
+                if (confirmBtn) {
+                    confirmBtn.disabled = false;
+                    confirmBtn.textContent = '确认购物车';
+                }
+                updateSteps(3);
+            }
+
+            if (log.message.includes('用户已确认') || log.message.includes('继续下一步')) {
+                const confirmBtn = document.getElementById('confirmBtn');
+                if (confirmBtn) {
+                    confirmBtn.disabled = true;
+                    confirmBtn.textContent = '已确认';
+                }
+            }
+
+            if (log.message.includes('订单确认线程已启动') || log.message.includes('抢购监控已启动')) {
                 updateSteps(4);
+            }
+
+            if (log.message.includes('抢购成功') || log.message.includes('任务已完成')) {
+                const closeBrowserBtn = document.getElementById('closeBrowserBtn');
+                if (closeBrowserBtn) {
+                    closeBrowserBtn.disabled = false;
+                }
             }
 
             if (log.error) {
@@ -213,7 +243,15 @@ function disableTimeInputs(disabled) {
 function resetUI() {
     document.getElementById('startBtn').disabled = false;
     document.getElementById('stopBtn').disabled = true;
-    document.getElementById('readyBtn').disabled = true;
+    const closeBrowserBtn = document.getElementById('closeBrowserBtn');
+    if (closeBrowserBtn) {
+        closeBrowserBtn.disabled = true;
+    }
+    const confirmBtn = document.getElementById('confirmBtn');
+    if (confirmBtn) {
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = '确认登录';
+    }
     disableTimeInputs(false);
     document.querySelectorAll('input[name="platform"]').forEach(radio => radio.disabled = false);
     updateSteps(1);

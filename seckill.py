@@ -202,15 +202,14 @@ class SeckillWorker:
             self.driver.get(self.config.url)
         time.sleep(2)
 
-        self.log("请在浏览器中扫码登录...")
+        self.log("请在浏览器中扫码登录，登录完成后请点击页面上的'确认登录'按钮...")
         if self.driver:
             try:
                 self.driver.find_element("link text", self.config.login_text).click()
             except NoSuchElementException:
                 self.log("未找到登录按钮，可能已登录")
 
-        self.log(f"等待 {login_wait} 秒...")
-        time.sleep(login_wait)
+        self.log("等待用户确认登录...")
 
     def _navigate_to_cart(self):
         """导航到购物车或订单页面"""
@@ -298,13 +297,17 @@ class SeckillWorker:
         self,
         target_time: str | None = None,
         login_wait: int = 15,
-        test_load_time: bool = True
+        test_load_time: bool = True,
+        wait_for_login_confirm: bool = True,
+        wait_for_cart_confirm: bool = True
     ):
         """
         启动抢购流程
         :param target_time: 目标时间 (YYYY-MM-DD HH:MM:SS.ffffff)
         :param login_wait: 登录等待时间（秒）
         :param test_load_time: 是否测试页面加载时间
+        :param wait_for_login_confirm: 是否等待登录确认
+        :param wait_for_cart_confirm: 是否等待购物车确认
         """
         self.running = True
 
@@ -313,11 +316,22 @@ class SeckillWorker:
             self.log("初始化浏览器...")
             self.driver = BrowserManager.create_driver()
 
-            # 导航并登录
+            # 导航并登录（等待用户确认）
             self._navigate_and_login(login_wait)
+            if wait_for_login_confirm and not self._wait_for_user_confirm("登录"):
+                return
 
             # 导航到购物车
             self._navigate_to_cart()
+
+            # 等待用户确认购物车
+            if wait_for_cart_confirm:
+                if not self.config.cart_url:
+                    self.log("当前平台无需购物车确认，直接开始抢购")
+                else:
+                    self.log("请在浏览器中选中要抢购的商品，然后点击页面上的'下一步'按钮...")
+                    if not self._wait_for_user_confirm("购物车"):
+                        return
 
             # 测试页面加载时间
             load_time = 0.5
@@ -336,13 +350,25 @@ class SeckillWorker:
             success = self._perform_seckill()
 
             if success:
-                self.log("20秒后自动关闭浏览器")
-                time.sleep(20)
+                self.log("抢购成功！请尽快完成付款")
+                self.log("任务已完成，请手动关闭浏览器或点击页面上的'关闭浏览器'按钮")
 
-        except Exception:
-            self.log(f"错误：发生异常")
-        finally:
-            self.stop()
+        except Exception as e:
+            import traceback
+            self.log(f"错误：{str(e)}")
+            self.log(f"错误详情：{traceback.format_exc()}")
+
+    def _wait_for_user_confirm(self, stage: str) -> bool:
+        """
+        等待用户确认
+        :param stage: 当前阶段（登录/购物车）
+        :return: True 表示用户已确认，False 表示取消
+        """
+        self.log(f"等待{stage}确认...")
+        # 检查 running 状态，用户可以通过外部修改此状态来继续
+        while self.running and not getattr(self, f'{stage}_confirmed', False):
+            time.sleep(0.5)
+        return self.running
 
     def stop(self):
         """停止抢购并清理资源"""
