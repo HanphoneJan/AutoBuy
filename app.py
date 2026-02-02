@@ -123,18 +123,24 @@ def download_driver():
     """下载驱动"""
     try:
         from webdriver_manager.chrome import ChromeDriverManager
+
+        logger.info("开始检查 Chrome 浏览器版本...")
         driver_manager = ChromeDriverManager()
+        logger.info("正在下载匹配的 ChromeDriver...")
         driver_path = driver_manager.install()
 
-        logger.info(f"使用驱动路径: {driver_path}")
+        logger.info(f"ChromeDriver 准备完成，路径: {driver_path}")
 
+        # 返回详细的消息
         return jsonify({
             'success': True,
             'message': '驱动准备完成',
             'path': driver_path
         })
     except Exception as e:
-        logger.error(f"下载驱动失败: {e}")
+        import traceback
+        error_detail = traceback.format_exc()
+        logger.error(f"下载驱动失败: {e}\n{error_detail}")
         return jsonify({
             'success': False,
             'message': f'下载失败: {str(e)}'

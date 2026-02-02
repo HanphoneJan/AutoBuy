@@ -41,10 +41,11 @@
                 <h3>京东使用说明</h3>
                 <ol>
                     <li>选择"京东"平台并设置抢购时间</li>
-                    <li>可使用快捷按钮快速选择今天或明天</li>
                     <li>点击"开始抢购"按钮</li>
-                    <li>在弹出的浏览器中扫码登录</li>
-                    <li>登录后等待系统自动跳转</li>
+                    <li>在弹出的浏览器中扫码登录京东账号</li>
+                    <li>登录完成后，点击页面上的"确认登录"按钮</li>
+                    <li>手动进入购物车，勾选需要抢购的商品</li>
+                    <li>点击页面上的"确认购物车"按钮</li>
                     <li>等待到达抢购时间，系统自动提交订单</li>
                 </ol>
             </div>
@@ -52,10 +53,11 @@
                 <h3>淘宝使用说明</h3>
                 <ol>
                     <li>选择"淘宝"平台</li>
-                    <li>点击"开始任务"按钮</li>
+                    <li>点击"开始抢购"按钮</li>
                     <li>在弹出的浏览器中登录淘宝账号</li>
-                    <li>进入购物车，勾选需要抢购的商品</li>
-                    <li>点击网页上的"我已准备好"按钮</li>
+                    <li>登录完成后，点击页面上的"确认登录"按钮</li>
+                    <li>手动进入购物车，勾选需要抢购的商品</li>
+                    <li>点击页面上的"确认购物车"按钮</li>
                     <li>等待到达抢购时间，系统自动点击结算和提交订单</li>
                 </ol>
             </div>
@@ -122,16 +124,34 @@
                             <div class="progress-fill" id="progressFill"></div>
                         </div>
                         <div class="progress-labels">
-                            <span class="progress-label" id="label1">选择平台</span>
-                            <span class="progress-label" id="label2">设置时间</span>
-                            <span class="progress-label" id="label3">开始任务</span>
-                            <span class="progress-label" id="label4">自动抢购</span>
+                            <div class="progress-step" id="step1">
+                                <span class="step-number">1</span>
+                                <span class="step-label">驱动检查</span>
+                            </div>
+                            <div class="progress-step" id="step2">
+                                <span class="step-number">2</span>
+                                <span class="step-label">登录确认</span>
+                                <button class="step-confirm-btn" id="confirmLoginBtn" onclick="confirmStage('login')" disabled>确认登录</button>
+                            </div>
+                            <div class="progress-step" id="step3">
+                                <span class="step-number">3</span>
+                                <span class="step-label">购物车确认</span>
+                                <button class="step-confirm-btn" id="confirmCartBtn" onclick="confirmStage('cart')" disabled>确认购物车</button>
+                            </div>
+                            <div class="progress-step" id="step4">
+                                <span class="step-number">4</span>
+                                <span class="step-label">执行抢购</span>
+                            </div>
+                            <div class="progress-step" id="step5">
+                                <span class="step-number">5</span>
+                                <span class="step-label">抢购完成</span>
+                            </div>
                         </div>
                     </div>
                     <div class="action-buttons">
                         <button onclick="startTask()" class="btn btn-primary" id="startBtn">开始抢购</button>
-                        <button onclick="confirmStage()" class="btn btn-warning" id="confirmBtn" disabled>确认登录</button>
                         <button onclick="closeBrowser()" class="btn btn-secondary" id="closeBrowserBtn" disabled>关闭浏览器</button>
+                        <button onclick="resetTask()" class="btn btn-secondary" id="resetBtn">重置</button>
                         <button onclick="stopTask()" class="btn btn-danger" id="stopBtn" disabled>停止</button>
                     </div>
                 </section>
@@ -229,14 +249,11 @@
         }
 
         // 确认当前阶段
-        async function confirmStage() {
+        async function confirmStage(stage) {
             if (!currentTaskId) {
                 alert('请先开始抢购任务');
                 return;
             }
-
-            const confirmBtn = document.getElementById('confirmBtn');
-            const stage = confirmBtn.textContent.includes('购物车') ? 'cart' : 'login';
 
             try {
                 const response = await fetch(`/api/tasks/${currentTaskId}/confirm`, {
@@ -252,10 +269,17 @@
                 if (data.status === 'ok') {
                     // 更新按钮状态
                     if (stage === 'login') {
-                        confirmBtn.textContent = '确认购物车';
-                    } else {
-                        confirmBtn.disabled = true;
-                        confirmBtn.textContent = '已确认';
+                        const confirmLoginBtn = document.getElementById('confirmLoginBtn');
+                        if (confirmLoginBtn) {
+                            confirmLoginBtn.disabled = true;
+                            confirmLoginBtn.textContent = '已确认';
+                        }
+                    } else if (stage === 'cart') {
+                        const confirmCartBtn = document.getElementById('confirmCartBtn');
+                        if (confirmCartBtn) {
+                            confirmCartBtn.disabled = true;
+                            confirmCartBtn.textContent = '已确认';
+                        }
                     }
                 }
             } catch (error) {
@@ -264,70 +288,11 @@
         }
 
         // 页面加载时初始化
-        window.onload = async function() {
+        window.onload = function() {
             initTimeSelectors();
             updatePlatform();
-            updateSteps(1);
-            await ensureDriver(); // 确保驱动已下载
+            updateSteps(0);
         };
-
-        // 确保驱动已下载
-        async function ensureDriver() {
-            const logContainer = document.getElementById('logContainer');
-            const driverMessage = document.createElement('div');
-            driverMessage.className = 'log-entry';
-            driverMessage.innerHTML = `<span class="log-time">${getCurrentTime()}</span>正在准备浏览器驱动...`;
-            logContainer.appendChild(driverMessage);
-            logContainer.scrollTop = logContainer.scrollHeight;
-
-            // 移除初始提示
-            const initialLog = logContainer.querySelector('.log-entry:first-child');
-            if (initialLog && initialLog.textContent.includes('等待开始...')) {
-                initialLog.remove();
-            }
-
-            try {
-                const response = await fetch('/api/driver/download', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                });
-
-                const data = await response.json();
-
-                if (data.success) {
-                    const successMessage = document.createElement('div');
-                    successMessage.className = 'log-entry';
-                    successMessage.innerHTML = `<span class="log-time">${getCurrentTime()}</span>驱动准备完成`;
-                    logContainer.appendChild(successMessage);
-                    logContainer.scrollTop = logContainer.scrollHeight;
-
-                    if (data.path) {
-                        const pathMessage = document.createElement('div');
-                        pathMessage.className = 'log-entry';
-                        pathMessage.style.color = '#1976D2';
-                        pathMessage.innerHTML = `<span class="log-time">${getCurrentTime()}</span>驱动路径: ${data.path}`;
-                        logContainer.appendChild(pathMessage);
-                        logContainer.scrollTop = logContainer.scrollHeight;
-                    }
-                } else {
-                    const errorMessage = document.createElement('div');
-                    errorMessage.className = 'log-entry';
-                    errorMessage.style.color = '#FF5252';
-                    errorMessage.innerHTML = `<span class="log-time">${getCurrentTime()}</span>驱动准备失败: ${data.message}`;
-                    logContainer.appendChild(errorMessage);
-                    logContainer.scrollTop = logContainer.scrollHeight;
-                }
-            } catch (error) {
-                const errorMessage = document.createElement('div');
-                errorMessage.className = 'log-entry';
-                errorMessage.style.color = '#FF5252';
-                errorMessage.innerHTML = `<span class="log-time">${getCurrentTime()}</span>驱动准备失败: ${error.message}`;
-                logContainer.appendChild(errorMessage);
-                logContainer.scrollTop = logContainer.scrollHeight;
-            }
-        }
 
         function getCurrentTime() {
             const now = new Date();
