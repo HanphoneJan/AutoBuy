@@ -103,19 +103,36 @@ class BrowserManager:
         if options is None:
             options = BrowserManager.create_options()
 
+        logger.info("检查 Chrome 浏览器驱动...")
         driver_path = ChromeDriverManager().install()
+        logger.info(f"驱动检查成功！驱动路径: {driver_path}")
+
         driver = webdriver.Chrome(service=ChromeService(driver_path), options=options)
 
-        # 移除 webdriver 特征
+        # 移除 webdriver 特征并移除遮罩层
         driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
             "source": """
                 Object.defineProperty(navigator, 'webdriver', {
                     get: () => undefined
-                })
+                });
+                // 移除淘宝的遮罩层
+                const removeOverlay = () => {
+                    const overlay = document.querySelector('.J_MIDDLEWARE_FRAME_WIDGET');
+                    if (overlay) {
+                        overlay.remove();
+                    }
+                    const overlays = document.querySelectorAll('[style*="z-index: 2147483647"]');
+                    overlays.forEach(el => el.remove());
+                };
+                removeOverlay();
+                setInterval(removeOverlay, 500);
             """
         })
 
-        driver.maximize_window()
+        # 设置窗口大小和位置，避免遮挡前端界面
+        # 将浏览器窗口放在屏幕右侧，避免遮挡前端界面
+        driver.set_window_size(1200, 800)
+        driver.set_window_position(1400, 0)
         logger.info("浏览器初始化完成")
         return driver
 
@@ -202,6 +219,30 @@ class SeckillWorker:
             self.driver.get(self.config.url)
         time.sleep(2)
 
+        # 移除淘宝的遮罩层
+        if self.driver:
+            try:
+                self.driver.execute_script("""
+                    const removeOverlay = () => {
+                        const overlay = document.querySelector('.J_MIDDLEWARE_FRAME_WIDGET');
+                        if (overlay) {
+                            overlay.remove();
+                            console.log('已移除遮罩层');
+                        }
+                        const overlays = document.querySelectorAll('[style*="z-index: 2147483647"]');
+                        overlays.forEach(el => {
+                            if (el.style.background && el.style.background.includes('rgba(0, 0, 0')) {
+                                el.remove();
+                                console.log('已移除黑色遮罩');
+                            }
+                        });
+                    };
+                    removeOverlay();
+                    setInterval(removeOverlay, 500);
+                """)
+            except Exception as e:
+                self.log(f"移除遮罩层脚本执行失败: {e}")
+
         self.log("请在浏览器中扫码登录，登录完成后请点击页面上的'确认登录'按钮...")
         if self.driver:
             try:
@@ -217,6 +258,27 @@ class SeckillWorker:
             self.log(f"导航到{self.config.name}购物车...")
             self.driver.get(self.config.cart_url)
             time.sleep(2)
+
+            # 移除淘宝的遮罩层
+            try:
+                self.driver.execute_script("""
+                    const removeOverlay = () => {
+                        const overlay = document.querySelector('.J_MIDDLEWARE_FRAME_WIDGET');
+                        if (overlay) {
+                            overlay.remove();
+                        }
+                        const overlays = document.querySelectorAll('[style*="z-index: 2147483647"]');
+                        overlays.forEach(el => {
+                            if (el.style.background && el.style.background.includes('rgba(0, 0, 0')) {
+                                el.remove();
+                            }
+                        });
+                    };
+                    removeOverlay();
+                    setInterval(removeOverlay, 500);
+                """)
+            except Exception as e:
+                pass  # 静默失败，不影响主流程
 
     def _test_page_load_time(self, num_tests: int = 3) -> float:
         """测试页面加载时间"""
@@ -321,15 +383,14 @@ class SeckillWorker:
             if wait_for_login_confirm and not self._wait_for_user_confirm("登录"):
                 return
 
-            # 导航到购物车
-            self._navigate_to_cart()
-
             # 等待用户确认购物车
             if wait_for_cart_confirm:
                 if not self.config.cart_url:
                     self.log("当前平台无需购物车确认，直接开始抢购")
                 else:
-                    self.log("请在浏览器中选中要抢购的商品，然后点击页面上的'下一步'按钮...")
+                    self.log("登录成功！")
+                    self.log("请手动在浏览器中进入购物车页面，选中要抢购的商品")
+                    self.log("然后点击页面上的'确认购物车'按钮...")
                     if not self._wait_for_user_confirm("购物车"):
                         return
 
