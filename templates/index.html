@@ -99,12 +99,12 @@
                         <div class="form-group">
                             <label for="targetMicrosecond">毫秒</label>
                             <select id="targetMicrosecond">
-                                <option value="0">000</option>
+                                <option value="0" selected>000</option>
                                 <option value="100">100</option>
                                 <option value="200">200</option>
                                 <option value="300">300</option>
                                 <option value="400">400</option>
-                                <option value="500" selected>500</option>
+                                <option value="500">500</option>
                                 <option value="600">600</option>
                                 <option value="700">700</option>
                                 <option value="800">800</option>
@@ -172,12 +172,11 @@
     <script>
         // 初始化时间选择器
         function initTimeSelectors() {
-            // 设置默认日期为明天
-            const tomorrow = new Date();
-            tomorrow.setDate(tomorrow.getDate() + 1);
-            document.getElementById('targetDate').value = tomorrow.toISOString().split('T')[0];
+            // 设置默认日期和时间为当前时间
+            const now = new Date();
+            document.getElementById('targetDate').value = now.toISOString().split('T')[0];
 
-            // 初始化小时
+            // 初始化小时并设置为当前小时
             const hourSelect = document.getElementById('targetHour');
             for (let i = 0; i < 24; i++) {
                 const option = document.createElement('option');
@@ -185,8 +184,9 @@
                 option.text = String(i).padStart(2, '0');
                 hourSelect.appendChild(option);
             }
+            hourSelect.value = String(now.getHours()).padStart(2, '0');
 
-            // 初始化分钟
+            // 初始化分钟并设置为当前分钟
             const minuteSelect = document.getElementById('targetMinute');
             for (let i = 0; i < 60; i++) {
                 const option = document.createElement('option');
@@ -194,8 +194,9 @@
                 option.text = String(i).padStart(2, '0');
                 minuteSelect.appendChild(option);
             }
+            minuteSelect.value = String(now.getMinutes()).padStart(2, '0');
 
-            // 初始化秒
+            // 初始化秒并设置为当前秒数
             const secondSelect = document.getElementById('targetSecond');
             for (let i = 0; i < 60; i++) {
                 const option = document.createElement('option');
@@ -203,6 +204,7 @@
                 option.text = String(i).padStart(2, '0');
                 secondSelect.appendChild(option);
             }
+            secondSelect.value = '00';
         }
 
         // 快速选择今天或明天
@@ -231,18 +233,13 @@
         // 更新平台选择
         function updatePlatform() {
             const platform = document.querySelector('input[name="platform"]:checked').value;
-            const confirmBtn = document.getElementById('confirmBtn');
             const jdInstructions = document.getElementById('jdInstructions');
             const tbInstructions = document.getElementById('tbInstructions');
 
             if (platform === 'jd') {
-                confirmBtn.textContent = '确认登录';
-                confirmBtn.style.display = 'inline-block';
                 jdInstructions.style.display = 'block';
                 tbInstructions.style.display = 'none';
             } else if (platform === 'tb') {
-                confirmBtn.textContent = '确认登录';
-                confirmBtn.style.display = 'inline-block';
                 jdInstructions.style.display = 'none';
                 tbInstructions.style.display = 'block';
             }
