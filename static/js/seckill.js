@@ -239,7 +239,9 @@ function startLogStream() {
             }
 
             // 步骤3: 等待购物车确认
-            if (log.message.includes('请手动在浏览器中进入购物车') || log.message.includes('等待购物车确认')) {
+            if (log.message.includes('请手动在浏览器中进入购物车') ||
+                log.message.includes('等待购物车确认') ||
+                log.message.includes('然后点击页面上的')) {
                 const confirmCartBtn = document.getElementById('confirmCartBtn');
                 console.log('检测到购物车确认日志，confirmCartBtn:', confirmCartBtn);
                 if (confirmCartBtn) {

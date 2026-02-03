@@ -97,7 +97,13 @@ def run_seckill_task(task_id, platform, target_time=None, login_wait=15):
     try:
         worker = SeckillWorker(platform, log_callback=log_callback)
         task['worker'] = worker
-        worker.start_seckill(target_time=target_time, login_wait=login_wait)
+        # 启用登录和购物车确认
+        worker.start_seckill(
+            target_time=target_time,
+            login_wait=login_wait,
+            wait_for_login_confirm=True,
+            wait_for_cart_confirm=True
+        )
         task['status'] = 'success'
     except Exception as e:
         task_manager.add_log(task_id, f"错误：{str(e)}")
@@ -188,7 +194,14 @@ def confirm_stage(task_id):
         return jsonify({'error': 'Worker未初始化'}), 400
 
     worker = task['worker']
-    setattr(worker, f'{stage}_confirmed', True)
+    # 使用字典来设置确认状态
+    if hasattr(worker, '_confirm_states'):
+        worker._confirm_states[stage] = True
+        logger.info(f"设置 {stage}_confirmed = True for task {task_id}")
+        logger.info(f"当前确认状态: {worker._confirm_states}")
+    else:
+        logger.error(f"Worker 没有 _confirm_states 属性")
+
     task_manager.add_log(task_id, f"用户已确认{stage}阶段，继续下一步...")
 
     return jsonify({'status': 'ok'})
