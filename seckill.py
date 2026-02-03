@@ -206,6 +206,8 @@ class SeckillWorker:
 
         self.driver: webdriver.Chrome | None = None
         self.running: bool = False
+        # 使用字典来存储确认状态，避免属性访问问题
+        self._confirm_states = {}
         self.log_callback: Callable[[str], None] = log_callback or logger.info
 
     def log(self, message: str):
@@ -380,7 +382,7 @@ class SeckillWorker:
 
             # 导航并登录（等待用户确认）
             self._navigate_and_login(login_wait)
-            if wait_for_login_confirm and not self._wait_for_user_confirm("登录"):
+            if wait_for_login_confirm and not self._wait_for_user_confirm("login"):
                 return
 
             # 等待用户确认购物车
@@ -389,9 +391,10 @@ class SeckillWorker:
                     self.log("当前平台无需购物车确认，直接开始抢购")
                 else:
                     self.log("登录成功！")
+                    self.log("等待购物车确认...")
                     self.log("请手动在浏览器中进入购物车页面，选中要抢购的商品")
                     self.log("然后点击页面上的'确认购物车'按钮...")
-                    if not self._wait_for_user_confirm("购物车"):
+                    if not self._wait_for_user_confirm("cart"):
                         return
 
             # 测试页面加载时间
@@ -426,9 +429,30 @@ class SeckillWorker:
         :return: True 表示用户已确认，False 表示取消
         """
         self.log(f"等待{stage}确认...")
-        # 检查 running 状态，用户可以通过外部修改此状态来继续
-        while self.running and not getattr(self, f'{stage}_confirmed', False):
+        # 使用字典存储确认状态
+        self._confirm_states[stage] = False
+        self.log(f"初始化 {stage}_confirmed = False")
+
+        count = 0
+        while self.running:
+            count += 1
+            confirmed = self._confirm_states.get(stage, False)
+            if count % 10 == 0:  # 每5秒输出一次调试信息
+                self.log(f"等待中... {stage}_confirmed = {confirmed}, count = {count}")
+
+            if confirmed:
+                self.log(f"检测到 {stage}_confirmed 变为 True")
+                break
             time.sleep(0.5)
+
+        # 检查是否已确认
+        final_confirmed = self._confirm_states.get(stage, False)
+        self.log(f"最终{stage}确认状态: {final_confirmed}")
+        if final_confirmed:
+            self.log(f"{stage}确认成功，继续下一步...")
+        else:
+            self.log(f"任务已取消或停止")
+
         return self.running
 
     def stop(self):
