@@ -155,38 +155,34 @@ class TimeManager:
             return round(time.time() * 1000)
 
     @staticmethod
-    def get_local_time() -> int:
-        """获取本地时间戳"""
+    def get_tb_time() -> int:
+        """获取淘宝服务器时间戳"""
+        # 尝试多个淘宝时间API
+        urls = [
+            'https://acs.m.taobao.com/gw/mtop.common.getTimestamp/',
+            'http://api.m.taobao.com/rest/api3.do?api=mtop.common.getTimestamp',
+        ]
+
+        for url in urls:
+            try:
+                resp = requests.get(url, timeout=5, allow_redirects=True)
+                data = resp.json()
+                if data.get('data') and data['data'].get('t'):
+                    return int(data['data']['t'])
+            except:
+                continue
+
+        logger.warning("获取淘宝时间失败，使用本地时间")
         return round(time.time() * 1000)
 
     @staticmethod
-    def get_time_diff(platform: str) -> int:
-        """获取本地与服务器时间差（毫秒）"""
+    def get_network_time(platform: str) -> int:
+        """获取网络时间戳（毫秒）"""
         if platform == 'jd':
-            jd_time = TimeManager.get_jd_time()
-            local_time = TimeManager.get_local_time()
-            return local_time - jd_time
-        return 0
-
-    @staticmethod
-    def adjust_target_time(target_time: str, platform: str, load_time: float = 0.5) -> str:
-        """根据平台调整目标时间"""
-        try:
-            mstime_datetime = datetime.datetime.strptime(target_time, "%Y-%m-%d %H:%M:%S.%f")
-
-            # 减去页面加载时间
-            mstime_datetime = mstime_datetime - datetime.timedelta(seconds=load_time - 0.1)
-
-            # 时间校准
-            time_diff = TimeManager.get_time_diff(platform)
-            if abs(time_diff) > 1000:
-                mstime_datetime = mstime_datetime - datetime.timedelta(milliseconds=time_diff - 100)
-                logger.info(f"时间校准：调整 {time_diff} 毫秒")
-
-            return mstime_datetime.strftime('%Y-%m-%d %H:%M:%S.%f')
-        except Exception as e:
-            logger.error(f"调整时间失败: {e}")
-            return target_time
+            return TimeManager.get_jd_time()
+        elif platform == 'tb':
+            return TimeManager.get_tb_time()
+        return round(time.time() * 1000)
 
 
 class SeckillWorker:
@@ -254,12 +250,29 @@ class SeckillWorker:
 
         self.log("等待用户确认登录...")
 
-    def _navigate_to_cart(self):
-        """导航到购物车或订单页面"""
+    def _navigate_to_cart(self) -> float:
+        """导航到购物车或订单页面，返回页面加载时间"""
+        load_time = 0.5
         if self.config.cart_url and self.driver:
             self.log(f"导航到{self.config.name}购物车...")
+            start_time = time.time()
             self.driver.get(self.config.cart_url)
             time.sleep(2)
+            end_time = time.time()
+            load_time = end_time - start_time
+            self.log(f"购物车页面加载时间：{load_time:.2f}秒")
+
+            # 测试结算按钮加载时间
+            try:
+                btn_start = time.time()
+                WebDriverWait(self.driver, 3).until(
+                    EC.presence_of_element_located((By.CLASS_NAME, self.config.settle_button_class))
+                )
+                btn_load_time = time.time() - btn_start
+                self.log(f"结算按钮加载时间：{btn_load_time:.2f}秒")
+                load_time = max(load_time, btn_load_time)
+            except TimeoutException:
+                self.log("结算按钮加载超时，使用默认加载时间")
 
             # 移除淘宝的遮罩层
             try:
@@ -281,6 +294,8 @@ class SeckillWorker:
                 """)
             except Exception as e:
                 pass  # 静默失败，不影响主流程
+
+        return load_time
 
     def _test_page_load_time(self, num_tests: int = 3) -> float:
         """测试页面加载时间"""
@@ -327,13 +342,46 @@ class SeckillWorker:
         return False
 
     def _wait_for_target_time(self, target_time: str):
-        """等待到达目标时间"""
+        """等待到达目标时间（使用网络时间）"""
         self.log(f"等待到达抢购时间 {target_time}...")
+        last_log_time = 0
         while self.running:
-            now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
-            if now >= target_time:
+            # 使用网络时间
+            network_timestamp_ms = TimeManager.get_network_time(self.platform)
+            network_time = datetime.datetime.fromtimestamp(network_timestamp_ms / 1000)
+            now_str = network_time.strftime('%Y-%m-%d %H:%M:%S.%f')
+
+            if now_str >= target_time:
+                self.log("抢购时间已到！")
                 break
+
+            # 每10秒输出一次等待日志
+            current_time = time.time()
+            if current_time - last_log_time >= 10:
+                time_left = self._calculate_time_left(target_time, now_str)
+                self.log(f"距离抢购还有 {time_left}...")
+                last_log_time = current_time
             time.sleep(0.1)
+
+    def _calculate_time_left(self, target_time: str, now_str: str) -> str:
+        """计算剩余时间"""
+        try:
+            target = datetime.datetime.strptime(target_time, "%Y-%m-%d %H:%M:%S.%f")
+            now = datetime.datetime.strptime(now_str, "%Y-%m-%d %H:%M:%S.%f")
+            diff = target - now
+            if diff.total_seconds() <= 0:
+                return "0秒"
+            hours = int(diff.total_seconds() // 3600)
+            minutes = int((diff.total_seconds() % 3600) // 60)
+            seconds = int(diff.total_seconds() % 60)
+            if hours > 0:
+                return f"{hours}小时{minutes}分{seconds}秒"
+            elif minutes > 0:
+                return f"{minutes}分{seconds}秒"
+            else:
+                return f"{seconds}秒"
+        except:
+            return "未知时间"
 
     def _perform_seckill(self, max_retries: int = 10):
         """执行抢购"""
@@ -386,28 +434,35 @@ class SeckillWorker:
                 return
 
             # 等待用户确认购物车
+            load_time = 0.5
             if wait_for_cart_confirm:
                 if not self.config.cart_url:
                     self.log("当前平台无需购物车确认，直接开始抢购")
                 else:
                     self.log("登录成功！")
                     self.log("等待购物车确认...")
-                    self.log("请手动在浏览器中进入购物车页面，选中要抢购的商品")
+                    self.log("请手动进入购物车，勾选需要抢购的商品，点击结算按钮进入结算界面")
                     self.log("然后点击页面上的'确认购物车'按钮...")
                     if not self._wait_for_user_confirm("cart"):
                         return
+                    self.log("购物车已确认，准备等待抢购时间...")
+                    # 在购物车确认后测试当前页面（结算页）的加载时间
+                    # 注意：不刷新页面，只检查结算按钮响应时间
+                    if test_load_time and target_time and self.driver:
+                        try:
+                            start = time.time()
+                            WebDriverWait(self.driver, 2).until(
+                                EC.presence_of_element_located((By.CLASS_NAME, self.config.settle_button_class))
+                            )
+                            load_time = time.time() - start
+                            self.log(f"结算按钮响应时间：{load_time:.2f}秒")
+                        except TimeoutException:
+                            self.log("结算按钮检测超时，使用默认加载时间")
+                            load_time = 0.5
 
-            # 测试页面加载时间
-            load_time = 0.5
-            if test_load_time and target_time:
-                load_time = self._test_page_load_time()
-
-            # 调整目标时间
+            # 等待到达目标时间（使用网络时间）
             if target_time:
-                target_time = TimeManager.adjust_target_time(target_time, self.platform, load_time)
-                self.log(f'调整后的抢购时间：{target_time}')
-
-                # 等待目标时间
+                self.log(f'目标抢购时间：{target_time}')
                 self._wait_for_target_time(target_time)
 
             # 执行抢购
@@ -450,10 +505,10 @@ class SeckillWorker:
         self.log(f"最终{stage}确认状态: {final_confirmed}")
         if final_confirmed:
             self.log(f"{stage}确认成功，继续下一步...")
+            return True
         else:
             self.log(f"任务已取消或停止")
-
-        return self.running
+            return False
 
     def stop(self):
         """停止抢购并清理资源"""

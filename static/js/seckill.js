@@ -108,13 +108,19 @@ async function startTask() {
         } catch (error) {
             alert('请求失败：' + error.message);
         }
-    } else {
+    } else if (currentPlatform === 'tb') {
+        const targetTime = getFormattedTime();
+        if (!targetTime) {
+            return;
+        }
+
         try {
             const response = await fetch('/api/tb/start', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                }
+                },
+                body: JSON.stringify({ target_time: targetTime })
             });
 
             const data = await response.json();
@@ -123,6 +129,7 @@ async function startTask() {
                 currentTaskId = data.task_id;
                 document.getElementById('startBtn').disabled = true;
                 document.getElementById('stopBtn').disabled = false;
+                disableTimeInputs(true);
                 document.querySelectorAll('input[name="platform"]').forEach(radio => radio.disabled = true);
                 updateStatus('running');
                 updateSteps(1);
