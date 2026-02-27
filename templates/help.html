@@ -5,102 +5,471 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>使用帮助 - 自动抢购工具</title>
     <link rel="stylesheet" href="/static/css/style.css">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <style>
+        .help-container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 40px 24px;
+        }
+
+        .help-header {
+            text-align: center;
+            margin-bottom: 48px;
+            padding-bottom: 32px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .help-header h1 {
+            font-size: 2.5rem;
+            font-weight: 300;
+            color: var(--md-primary);
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+        }
+
+        .help-header p {
+            font-size: 1.125rem;
+            color: var(--md-on-surface);
+            opacity: 0.7;
+        }
+
+        .nav-back {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--md-primary);
+            text-decoration: none;
+            font-weight: 500;
+            margin-bottom: 24px;
+            transition: all 0.2s ease;
+        }
+
+        .nav-back:hover {
+            color: var(--md-primary-variant);
+            transform: translateX(-4px);
+        }
+
+        .help-grid {
+            display: grid;
+            gap: 24px;
+        }
+
+        .help-card {
+            background: var(--md-surface);
+            border-radius: 12px;
+            padding: 32px;
+            box-shadow: var(--shadow-1);
+            transition: all 0.3s ease;
+        }
+
+        .help-card:hover {
+            box-shadow: var(--shadow-4);
+        }
+
+        .help-card h2 {
+            font-size: 1.5rem;
+            font-weight: 500;
+            color: var(--md-on-surface);
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .help-card h2 .material-icons {
+            color: var(--md-primary);
+            font-size: 1.75rem;
+        }
+
+        /* 快速开始步骤 */
+        .step-flow {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 24px;
+        }
+
+        .step-box {
+            position: relative;
+            padding: 24px;
+            background: linear-gradient(135deg, rgba(68, 121, 255, 0.05) 0%, rgba(68, 121, 255, 0.02) 100%);
+            border-radius: 12px;
+            border: 1px solid rgba(68, 121, 255, 0.1);
+            transition: all 0.3s ease;
+        }
+
+        .step-box:hover {
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-4);
+            border-color: rgba(68, 121, 255, 0.3);
+        }
+
+        .step-badge {
+            position: absolute;
+            top: -12px;
+            left: 24px;
+            width: 32px;
+            height: 32px;
+            background: var(--md-primary);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 0.875rem;
+            box-shadow: var(--shadow-2);
+        }
+
+        .step-box h3 {
+            font-size: 1.125rem;
+            font-weight: 500;
+            margin-bottom: 12px;
+            margin-top: 8px;
+            color: var(--md-on-surface);
+        }
+
+        .step-box p {
+            font-size: 0.875rem;
+            color: var(--md-on-surface);
+            opacity: 0.7;
+            margin-bottom: 12px;
+        }
+
+        .code-block {
+            background: #263238;
+            color: #ECEFF1;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-family: 'Roboto Mono', monospace;
+            font-size: 0.875rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .code-block::before {
+            content: '$';
+            color: var(--md-primary-light);
+            font-weight: 500;
+        }
+
+        /* 平台说明 */
+        .platform-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 24px;
+        }
+
+        .platform-card {
+            padding: 24px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+        }
+
+        .platform-card.jd {
+            background: linear-gradient(135deg, rgba(196, 25, 45, 0.05) 0%, rgba(196, 25, 45, 0.02) 100%);
+            border-color: rgba(196, 25, 45, 0.2);
+        }
+
+        .platform-card.tb {
+            background: linear-gradient(135deg, rgba(255, 80, 0, 0.05) 0%, rgba(255, 80, 0, 0.02) 100%);
+            border-color: rgba(255, 80, 0, 0.2);
+        }
+
+        .platform-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .platform-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 1.25rem;
+        }
+
+        .platform-icon.jd {
+            background: #C4192D;
+            color: white;
+        }
+
+        .platform-icon.tb {
+            background: #FF5000;
+            color: white;
+        }
+
+        .platform-header h3 {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        .feature-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .feature-list li {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 12px 0;
+            border-bottom: 1px dashed var(--border-color);
+            font-size: 0.9375rem;
+            line-height: 1.6;
+        }
+
+        .feature-list li:last-child {
+            border-bottom: none;
+        }
+
+        .feature-list .material-icons {
+            color: var(--md-secondary);
+            font-size: 1.25rem;
+            margin-top: 2px;
+        }
+
+        /* 警告卡片 */
+        .warning-card {
+            background: linear-gradient(135deg, rgba(255, 160, 0, 0.08) 0%, rgba(255, 160, 0, 0.02) 100%);
+            border: 1px solid rgba(255, 160, 0, 0.3);
+            border-radius: 12px;
+            padding: 24px;
+        }
+
+        .warning-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+            color: var(--md-warning);
+        }
+
+        .warning-header .material-icons {
+            font-size: 1.75rem;
+        }
+
+        .warning-header h2 {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        .warning-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .warning-list li {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 8px 0;
+            font-size: 0.9375rem;
+            color: var(--md-on-surface);
+        }
+
+        .warning-list li::before {
+            content: '•';
+            color: var(--md-warning);
+            font-weight: bold;
+            font-size: 1.25rem;
+            line-height: 1;
+        }
+
+        /* FAQ */
+        .faq-list {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .faq-item {
+            background: rgba(68, 121, 255, 0.03);
+            border-radius: 12px;
+            padding: 20px;
+            border-left: 4px solid var(--md-primary);
+        }
+
+        .faq-item h3 {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--md-primary);
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .faq-item p {
+            font-size: 0.9375rem;
+            color: var(--md-on-surface);
+            opacity: 0.8;
+            line-height: 1.6;
+            margin: 0;
+        }
+
+        /* 响应式 */
+        @media (max-width: 768px) {
+            .help-container {
+                padding: 24px 16px;
+            }
+
+            .help-header h1 {
+                font-size: 1.75rem;
+            }
+
+            .platform-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .step-flow {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <nav>
-                <a href="/" class="nav-link">首页</a>
-                <span class="divider">|</span>
-                <span class="nav-link active">使用帮助</span>
-            </nav>
-            <h1>📖 使用帮助</h1>
+    <div class="help-container">
+        <a href="/" class="nav-back">
+            <span class="material-icons">arrow_back</span>
+            返回首页
+        </a>
+
+        <header class="help-header">
+            <h1>
+                <span class="material-icons">help_outline</span>
+                使用帮助
+            </h1>
+            <p>了解如何使用自动抢购工具，提高抢购成功率</p>
         </header>
 
-        <main>
-            <div class="help-content">
-                <section class="help-section">
-                    <h2>快速开始</h2>
-                    <div class="step-list">
-                        <div class="step-item">
-                            <div class="step-number">1</div>
-                            <div class="step-content">
-                                <h3>安装依赖</h3>
-                                <p>确保已安装 Python 3.8+，并安装项目依赖：</p>
-                                <code>uv sync</code>
-                            </div>
+        <main class="help-grid">
+            <!-- 快速开始 -->
+            <section class="help-card">
+                <h2>
+                    <span class="material-icons">rocket_launch</span>
+                    快速开始
+                </h2>
+                <div class="step-flow">
+                    <div class="step-box">
+                        <div class="step-badge">1</div>
+                        <h3>安装依赖</h3>
+                        <p>确保已安装 Python 3.8+，并安装项目依赖</p>
+                        <div class="code-block">uv sync</div>
+                    </div>
+                    <div class="step-box">
+                        <div class="step-badge">2</div>
+                        <h3>启动应用</h3>
+                        <p>运行以下命令启动 Web 服务</p>
+                        <div class="code-block">uv run app.py</div>
+                    </div>
+                    <div class="step-box">
+                        <div class="step-badge">3</div>
+                        <h3>访问界面</h3>
+                        <p>在浏览器中打开 Web 界面</p>
+                        <div class="code-block">http://localhost:5000</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 平台说明 -->
+            <section class="help-card">
+                <h2>
+                    <span class="material-icons">store</span>
+                    平台使用说明
+                </h2>
+                <div class="platform-grid">
+                    <div class="platform-card jd">
+                        <div class="platform-header">
+                            <div class="platform-icon jd">JD</div>
+                            <h3>京东抢购</h3>
                         </div>
-                        <div class="step-item">
-                            <div class="step-number">2</div>
-                            <div class="step-content">
-                                <h3>启动应用</h3>
-                                <p>运行以下命令启动 Web 服务：</p>
-                                <code>uv run app.py</code>
-                            </div>
+                        <ul class="feature-list">
+                            <li>
+                                <span class="material-icons">schedule</span>
+                                <span><strong>精准定时：</strong>使用京东服务器时间进行抢购</span>
+                            </li>
+                            <li>
+                                <span class="material-icons">auto_fix_high</span>
+                                <span><strong>自动操作：</strong>到达时间自动点击提交订单</span>
+                            </li>
+                            <li>
+                                <span class="material-icons">verified</span>
+                                <span><strong>登录确认：</strong>扫码后点击确认按钮继续</span>
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="platform-card tb">
+                        <div class="platform-header">
+                            <div class="platform-icon tb">TB</div>
+                            <h3>淘宝抢购</h3>
                         </div>
-                        <div class="step-item">
-                            <div class="step-number">3</div>
-                            <div class="step-content">
-                                <h3>访问界面</h3>
-                                <p>在浏览器中打开：</p>
-                                <code>http://localhost:5000</code>
-                            </div>
-                        </div>
+                        <ul class="feature-list">
+                            <li>
+                                <span class="material-icons">schedule</span>
+                                <span><strong>精准定时：</strong>使用淘宝服务器时间进行抢购</span>
+                            </li>
+                            <li>
+                                <span class="material-icons">touch_app</span>
+                                <span><strong>手动准备：</strong>需手动勾选商品并进入结算页</span>
+                            </li>
+                            <li>
+                                <span class="material-icons">speed</span>
+                                <span><strong>高频点击：</strong>多线程快速点击提交订单</span>
+                            </li>
+                        </ul>
                     </div>
-                </section>
+                </div>
+            </section>
 
-                <section class="help-section">
-                    <h2>京东抢购说明</h2>
-                    <ul>
-                        <li><strong>时间设置：</strong>格式为 YYYY-MM-DD HH:MM:SS.ffffff，例如：2024-11-01 20:00:00.000000</li>
-                        <li><strong>时间校准：</strong>系统会自动获取京东服务器时间并校准本地时间差</li>
-                        <li><strong>自动跳转：</strong>登录后自动跳转到订单确认页面</li>
-                        <li><strong>精准提交：</strong>到达时间后自动点击提交订单按钮</li>
-                    </ul>
-                </section>
-
-                <section class="help-section">
-                    <h2>淘宝抢购说明</h2>
-                    <ul>
-                        <li><strong>手动准备：</strong>需要手动登录并勾选购物车商品</li>
-                        <li><strong>双线程：</strong>主线程监控结算按钮，高频线程快速点击提交订单</li>
-                        <li><strong>实时监控：</strong>实时检测页面状态并自动操作</li>
-                        <li><strong>多种点击方式：</strong>支持常规点击和 JavaScript 点击</li>
-                    </ul>
-                </section>
-
-                <section class="help-section warning">
-                    <h2>⚠️ 注意事项</h2>
-                    <ul>
-                        <li>请确保已安装 Chrome 浏览器</li>
-                        <li>首次运行可能需要下载 ChromeDriver（程序会自动处理）</li>
-                        <li>请勿用于违规抢购，仅限学习交流使用</li>
-                        <li>建议提前测试登录和页面跳转流程</li>
-                        <li>抢购成功后请尽快付款</li>
-                    </ul>
-                </section>
-
-                <section class="help-section">
-                    <h2>常见问题</h2>
-                    <div class="faq-item">
-                        <h3>Q: 浏览器启动失败怎么办？</h3>
-                        <p>A: 请检查是否安装了 Chrome 浏览器，或尝试更新 ChromeDriver 版本。</p>
-                    </div>
-                    <div class="faq-item">
-                        <h3>Q: 登录二维码扫描后没反应？</h3>
-                        <p>A: 请确保网络连接正常，或尝试刷新页面重新扫描。</p>
-                    </div>
-                    <div class="faq-item">
-                        <h3>Q: 抢购时间已到但没有自动提交？</h3>
-                        <p>A: 检查时间格式是否正确，或查看日志了解具体错误信息。</p>
-                    </div>
-                </section>
+            <!-- 注意事项 -->
+            <div class="warning-card">
+                <div class="warning-header">
+                    <span class="material-icons">warning</span>
+                    <h2>注意事项</h2>
+                </div>
+                <ul class="warning-list">
+                    <li>请确保已安装 Chrome 浏览器</li>
+                    <li>首次运行可能需要下载 ChromeDriver（程序会自动处理）</li>
+                    <li>抢购前建议提前测试登录和页面跳转流程</li>
+                    <li>抢购成功后请尽快完成付款</li>
+                    <li>请勿用于违规抢购，仅限学习交流使用</li>
+                </ul>
             </div>
-        </main>
 
-        <footer>
-            <a href="/" class="btn btn-link">返回首页</a>
-        </footer>
+            <!-- 常见问题 -->
+            <section class="help-card">
+                <h2>
+                    <span class="material-icons">quiz</span>
+                    常见问题
+                </h2>
+                <div class="faq-list">
+                    <div class="faq-item">
+                        <h3>浏览器启动失败怎么办？</h3>
+                        <p>请检查是否安装了 Chrome 浏览器，或尝试更新 ChromeDriver 版本。程序会自动尝试下载匹配的 ChromeDriver。</p>
+                    </div>
+                    <div class="faq-item">
+                        <h3>登录二维码扫描后没反应？</h3>
+                        <p>请确保网络连接正常，扫码成功后需要在页面上点击"确认登录"按钮才能继续流程。</p>
+                    </div>
+                    <div class="faq-item">
+                        <h3>抢购时间已到但没有自动提交？</h3>
+                        <p>请检查时间格式是否正确，确保已完成"确认购物车"步骤。可查看实时日志了解具体执行状态。</p>
+                    </div>
+                </div>
+            </section>
+        </main>
     </div>
 </body>
 </html>
