@@ -29,7 +29,7 @@ class TaskManager:
         self.tasks = {}
         self.task_counter = 0
 
-    def create_task(self, platform):
+    def create_task(self, platform, target_time=None):
         self.task_counter += 1
         task_id = f"task_{self.task_counter}"
         self.tasks[task_id] = {
@@ -40,7 +40,7 @@ class TaskManager:
             'driver': None,
             'running': False,
             'thread': None,
-            'target_time': None
+            'target_time': target_time
         }
         return task_id
 
@@ -162,7 +162,7 @@ def start_jd():
     if not target_time:
         return jsonify({'error': '请设置抢购时间'}), 400
 
-    task_id = task_manager.create_task('jd')
+    task_id = task_manager.create_task('jd', target_time)
     thread = threading.Thread(target=run_seckill_task, args=(task_id, 'jd', target_time, 25))
     thread.daemon = True
     thread.start()
@@ -172,8 +172,14 @@ def start_jd():
 
 @app.route('/api/tb/start', methods=['POST'])
 def start_tb():
-    task_id = task_manager.create_task('tb')
-    thread = threading.Thread(target=run_seckill_task, args=(task_id, 'tb', None, 15))
+    data = request.json
+    target_time = data.get('target_time')
+
+    if not target_time:
+        return jsonify({'error': '请设置抢购时间'}), 400
+
+    task_id = task_manager.create_task('tb', target_time)
+    thread = threading.Thread(target=run_seckill_task, args=(task_id, 'tb', target_time, 15))
     thread.daemon = True
     thread.start()
 
