@@ -1,7 +1,6 @@
 # 🛒 淘宝京东自动抢购工具
 
 [![GitHub Stars](https://img.shields.io/github/stars/HanphoneJan/AutoBuy?style=for-the-badge&color=FFD700&logo=github)](https://github.com/HanphoneJan/AutoBuy)
-[![GitHub License](https://img.shields.io/github/license/HanphoneJan/AutoBuy?style=for-the-badge&color=4169E1&logo=github)](https://github.com/HanphoneJan/AutoBuy/blob/main/LICENSE)
 [![Update Time](https://img.shields.io/badge/Last%20Update-2024.11.18-FF6347?style=for-the-badge&logo=clock)](https://github.com/HanphoneJan/AutoBuy/commits/main)
 
 ## 📌 项目简介
