@@ -195,10 +195,14 @@ http://localhost:5000
 若使用过程中遇到bug或有功能建议，欢迎通过以下方式反馈：
 
 - GitHub Issues：[https://github.com/HanphoneJan/AutoBuy/issues](https://github.com/HanphoneJan/AutoBuy/issues)
-- 项目仓库：[https://github.com/HanphoneJan/AutoBuy](https://github.com/HanphoneJan/AutoBuy)
 
 ---
 
-<p align="center">
-  <sub>🌟 觉得有用？欢迎 Star 支持一下～</sub>
-</p>
+## 📊 Star History
+
+<div align="center">
+
+[![Star History Chart](https://api.star-history.com/svg?repos=HanphoneJan/AutoBuy&type=Date)](https://star-history.com/#HanphoneJan/AutoBuy&Date)
+
+</div>
+
