@@ -345,43 +345,58 @@ class SeckillWorker:
         """等待到达目标时间（使用网络时间）"""
         self.log(f"等待到达抢购时间 {target_time}...")
         last_log_time = 0
+
+        # 解析目标时间为datetime对象
+        target_dt = self._parse_time_string(target_time)
+        if target_dt is None:
+            self.log(f"错误：无法解析目标时间 {target_time}")
+            return
+
         while self.running:
             # 使用网络时间
             network_timestamp_ms = TimeManager.get_network_time(self.platform)
             network_time = datetime.datetime.fromtimestamp(network_timestamp_ms / 1000)
-            now_str = network_time.strftime('%Y-%m-%d %H:%M:%S.%f')
 
-            if now_str >= target_time:
+            if network_time >= target_dt:
                 self.log("抢购时间已到！")
                 break
 
             # 每10秒输出一次等待日志
             current_time = time.time()
             if current_time - last_log_time >= 10:
-                time_left = self._calculate_time_left(target_time, now_str)
+                time_left = self._calculate_time_left_dt(target_dt, network_time)
                 self.log(f"距离抢购还有 {time_left}...")
                 last_log_time = current_time
             time.sleep(0.1)
 
-    def _calculate_time_left(self, target_time: str, now_str: str) -> str:
-        """计算剩余时间"""
-        try:
-            target = datetime.datetime.strptime(target_time, "%Y-%m-%d %H:%M:%S.%f")
-            now = datetime.datetime.strptime(now_str, "%Y-%m-%d %H:%M:%S.%f")
-            diff = target - now
-            if diff.total_seconds() <= 0:
-                return "0秒"
-            hours = int(diff.total_seconds() // 3600)
-            minutes = int((diff.total_seconds() % 3600) // 60)
-            seconds = int(diff.total_seconds() % 60)
-            if hours > 0:
-                return f"{hours}小时{minutes}分{seconds}秒"
-            elif minutes > 0:
-                return f"{minutes}分{seconds}秒"
-            else:
-                return f"{seconds}秒"
-        except:
-            return "未知时间"
+    def _parse_time_string(self, time_str: str) -> datetime.datetime | None:
+        """解析时间字符串为datetime对象，支持多种格式"""
+        formats = [
+            "%Y-%m-%d %H:%M:%S.%f",  # 完整格式：2025-03-19 11:00:00.000000
+            "%Y-%m-%d %H:%M:%S",      # 无微秒：2025-03-19 11:00:00
+            "%Y-%m-%d %H:%M",         # 无秒：2025-03-19 11:00
+        ]
+        for fmt in formats:
+            try:
+                return datetime.datetime.strptime(time_str, fmt)
+            except ValueError:
+                continue
+        return None
+
+    def _calculate_time_left_dt(self, target_dt: datetime.datetime, now_dt: datetime.datetime) -> str:
+        """使用datetime对象计算剩余时间"""
+        diff = target_dt - now_dt
+        if diff.total_seconds() <= 0:
+            return "0秒"
+        hours = int(diff.total_seconds() // 3600)
+        minutes = int((diff.total_seconds() % 3600) // 60)
+        seconds = int(diff.total_seconds() % 60)
+        if hours > 0:
+            return f"{hours}小时{minutes}分{seconds}秒"
+        elif minutes > 0:
+            return f"{minutes}分{seconds}秒"
+        else:
+            return f"{seconds}秒"
 
     def _perform_seckill(self, max_retries: int = 10):
         """执行抢购"""
