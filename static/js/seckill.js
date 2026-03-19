@@ -304,11 +304,25 @@ function startLogStream() {
 
 function addLog(message, time = null) {
     const logContainer = document.getElementById('logContainer');
-    const timestamp = time || getCurrentTime();
+
+    // 检测消息是否以 [网络时间] 开头，如 "[10:59:52] 距离抢购还有 8秒..."
+    const networkTimeMatch = message.match(/^\[(\d{2}:\d{2}:\d{2})\]\s*/);
+    let timestamp;
+    let displayMessage;
+
+    if (networkTimeMatch) {
+        // 使用消息中嵌入的网络时间
+        timestamp = networkTimeMatch[1];
+        displayMessage = message.substring(networkTimeMatch[0].length);
+    } else {
+        // 使用后端传入的时间或本地时间
+        timestamp = time || getCurrentTime();
+        displayMessage = message;
+    }
 
     const logEntry = document.createElement('div');
     logEntry.className = 'log-entry';
-    logEntry.innerHTML = `<span class="log-time">${timestamp}</span>${message}`;
+    logEntry.innerHTML = `<span class="log-time">${timestamp}</span>${displayMessage}`;
 
     logContainer.appendChild(logEntry);
     logContainer.scrollTop = logContainer.scrollHeight;

@@ -343,14 +343,19 @@ class SeckillWorker:
 
     def _wait_for_target_time(self, target_time: str):
         """等待到达目标时间（使用网络时间）"""
-        self.log(f"等待到达抢购时间 {target_time}...")
-        last_log_time = 0
-
         # 解析目标时间为datetime对象
         target_dt = self._parse_time_string(target_time)
         if target_dt is None:
             self.log(f"错误：无法解析目标时间 {target_time}")
             return
+
+        # 使用网络时间记录日志，保持时间一致
+        network_timestamp_ms = TimeManager.get_network_time(self.platform)
+        network_time = datetime.datetime.fromtimestamp(network_timestamp_ms / 1000)
+        network_time_str = network_time.strftime('%H:%M:%S')
+        self.log(f"[{network_time_str}] 等待到达抢购时间 {target_time}...")
+
+        last_log_time = 0
 
         while self.running:
             # 使用网络时间
@@ -365,7 +370,8 @@ class SeckillWorker:
             current_time = time.time()
             if current_time - last_log_time >= 10:
                 time_left = self._calculate_time_left_dt(target_dt, network_time)
-                self.log(f"距离抢购还有 {time_left}...")
+                network_time_str = network_time.strftime('%H:%M:%S')
+                self.log(f"[{network_time_str}] 距离抢购还有 {time_left}...")
                 last_log_time = current_time
             time.sleep(0.1)
 
