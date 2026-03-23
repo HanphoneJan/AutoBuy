@@ -341,6 +341,40 @@ class SeckillWorker:
                     time.sleep(0.1)
         return False
 
+    def _refresh_item_status(self):
+        """通过切换号码保护复选框刷新商品状态"""
+        if not self.driver:
+            return
+
+        try:
+            # 查找号码保护复选框 - 使用稳定的 class 选择器
+            checkbox_input = self.driver.find_element(
+                By.CSS_SELECTOR,
+                '.settlementOption--bLHTJgxx .ant-checkbox-input'
+            )
+
+            # 获取当前状态
+            is_checked = checkbox_input.is_selected()
+
+            # 切换状态：如果选中则取消，如果未选中则选中
+            self.driver.execute_script("arguments[0].click();", checkbox_input)
+
+            # 短暂等待后恢复原来状态
+            time.sleep(0.05)
+            if self.driver:
+                checkbox_input = self.driver.find_element(
+                    By.CSS_SELECTOR,
+                    '.settlementOption--bLHTJgxx .ant-checkbox-input'
+                )
+                current_checked = checkbox_input.is_selected()
+                if current_checked == is_checked:
+                    # 状态没变，再点击一次切换
+                    self.driver.execute_script("arguments[0].click();", checkbox_input)
+
+        except Exception:
+            # 元素不存在或操作失败，静默处理
+            pass
+
     def _wait_for_target_time(self, target_time: str):
         """等待到达目标时间（使用网络时间）"""
         # 解析目标时间为datetime对象
@@ -356,6 +390,7 @@ class SeckillWorker:
         self.log(f"[{network_time_str}] 等待到达抢购时间 {target_time}...")
 
         last_log_time = 0
+        refresh_started = False
 
         while self.running:
             # 使用网络时间
@@ -365,6 +400,20 @@ class SeckillWorker:
             if network_time >= target_dt:
                 self.log("抢购时间已到！")
                 break
+
+            # 计算剩余时间（秒）
+            time_left_seconds = (target_dt - network_time).total_seconds()
+
+            # 提前15秒开始刷新商品状态
+            if time_left_seconds <= 15 and not refresh_started:
+                self.log("开始刷新商品状态...")
+                refresh_started = True
+
+            # 刷新状态期间，每100ms刷新一次
+            if refresh_started and time_left_seconds > 0:
+                self._refresh_item_status()
+                time.sleep(0.1)
+                continue
 
             # 每10秒输出一次等待日志
             current_time = time.time()
