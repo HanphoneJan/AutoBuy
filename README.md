@@ -196,11 +196,13 @@ http://localhost:5000
 
 ---
 
-## 📊 Star History
+## Star History
 
-<div align="center">
-
-[![Star History Chart](https://api.star-history.com/svg?repos=HanphoneJan/AutoBuy&type=Date)](https://star-history.com/#HanphoneJan/AutoBuy&Date)
-
-</div>
+<a href="https://www.star-history.com/?repos=HanphoneJan%2FAutoBuy&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=HanphoneJan/AutoBuy&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=HanphoneJan/AutoBuy&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=HanphoneJan/AutoBuy&type=date&legend=top-left" />
+ </picture>
+</a>
 
