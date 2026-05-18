@@ -79,6 +79,46 @@ PLATFORM_CONFIGS = {
 class BrowserManager:
     """浏览器管理器"""
 
+    OVERLAY_REMOVAL_SCRIPT = """
+        (function() {
+            const removeOverlay = () => {
+                // --- 淘宝专用 ---
+                var tw = document.querySelector('.J_MIDDLEWARE_FRAME_WIDGET');
+                if (tw) tw.remove();
+                document.querySelectorAll('[style*="z-index: 2147483647"]').forEach(function(el) { el.remove(); });
+
+                // --- 京东专用 ---
+                document.querySelectorAll('.login-box, .o2_curev, .o2_mixv').forEach(function(el) { el.remove(); });
+                document.querySelectorAll('.op-c5, .ui-widget-overlay').forEach(function(el) { el.remove(); });
+
+                // --- 通用全屏遮罩检测 ---
+                document.querySelectorAll('div, section, span').forEach(function(el) {
+                    var style = getComputedStyle(el);
+                    var zIndex = parseInt(style.zIndex, 10);
+                    if (zIndex > 9999 &&
+                        style.position === 'fixed' &&
+                        style.top === '0px' &&
+                        style.left === '0px' &&
+                        el.offsetWidth >= window.innerWidth * 0.9 &&
+                        el.offsetHeight >= window.innerHeight * 0.9) {
+                        var bg = style.backgroundColor;
+                        if (bg === 'rgba(0, 0, 0, 0)' ||
+                            bg === 'transparent' ||
+                            (bg.indexOf('rgba') !== -1 && bg.indexOf(', 0)') !== -1) ||
+                            bg === 'rgba(0, 0, 0, 0.5)' ||
+                            bg === 'rgba(0, 0, 0, 0.6)' ||
+                            bg === 'rgba(0, 0, 0, 0.7)' ||
+                            bg === 'rgba(0, 0, 0, 0.8)') {
+                            el.remove();
+                        }
+                    }
+                });
+            };
+            removeOverlay();
+            setInterval(removeOverlay, 500);
+        })();
+    """
+
     @staticmethod
     def create_options(headless: bool = False) -> Options:
         """创建浏览器选项"""
@@ -171,18 +211,7 @@ class BrowserManager:
                 Object.defineProperty(navigator, 'webdriver', {
                     get: () => undefined
                 });
-                // 移除淘宝的遮罩层
-                const removeOverlay = () => {
-                    const overlay = document.querySelector('.J_MIDDLEWARE_FRAME_WIDGET');
-                    if (overlay) {
-                        overlay.remove();
-                    }
-                    const overlays = document.querySelectorAll('[style*="z-index: 2147483647"]');
-                    overlays.forEach(el => el.remove());
-                };
-                removeOverlay();
-                setInterval(removeOverlay, 500);
-            """
+            """ + BrowserManager.OVERLAY_REMOVAL_SCRIPT
         })
 
         # 设置窗口大小和位置，避免遮挡前端界面
@@ -273,27 +302,10 @@ class SeckillWorker:
             self.driver.get(self.config.url)
         time.sleep(2)
 
-        # 移除淘宝的遮罩层
+        # 移除遮罩层
         if self.driver:
             try:
-                self.driver.execute_script("""
-                    const removeOverlay = () => {
-                        const overlay = document.querySelector('.J_MIDDLEWARE_FRAME_WIDGET');
-                        if (overlay) {
-                            overlay.remove();
-                            console.log('已移除遮罩层');
-                        }
-                        const overlays = document.querySelectorAll('[style*="z-index: 2147483647"]');
-                        overlays.forEach(el => {
-                            if (el.style.background && el.style.background.includes('rgba(0, 0, 0')) {
-                                el.remove();
-                                console.log('已移除黑色遮罩');
-                            }
-                        });
-                    };
-                    removeOverlay();
-                    setInterval(removeOverlay, 500);
-                """)
+                self.driver.execute_script(BrowserManager.OVERLAY_REMOVAL_SCRIPT)
             except Exception as e:
                 self.log(f"移除遮罩层脚本执行失败: {e}")
 
@@ -330,24 +342,9 @@ class SeckillWorker:
             except TimeoutException:
                 self.log("结算按钮加载超时，使用默认加载时间")
 
-            # 移除淘宝的遮罩层
+            # 移除遮罩层
             try:
-                self.driver.execute_script("""
-                    const removeOverlay = () => {
-                        const overlay = document.querySelector('.J_MIDDLEWARE_FRAME_WIDGET');
-                        if (overlay) {
-                            overlay.remove();
-                        }
-                        const overlays = document.querySelectorAll('[style*="z-index: 2147483647"]');
-                        overlays.forEach(el => {
-                            if (el.style.background && el.style.background.includes('rgba(0, 0, 0')) {
-                                el.remove();
-                            }
-                        });
-                    };
-                    removeOverlay();
-                    setInterval(removeOverlay, 500);
-                """)
+                self.driver.execute_script(BrowserManager.OVERLAY_REMOVAL_SCRIPT)
             except Exception as e:
                 pass  # 静默失败，不影响主流程
 
