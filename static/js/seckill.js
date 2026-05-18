@@ -2,14 +2,11 @@ let currentTaskId = null;
 let eventSource = null;
 let currentPlatform = 'jd';
 
-// 确保驱动已下载
+// 确保驱动已下载（带重试机制）
 async function ensureDriver() {
     const logContainer = document.getElementById('logContainer');
-    const driverMessage = document.createElement('div');
-    driverMessage.className = 'log-entry';
-    driverMessage.innerHTML = `<span class="log-time">${getCurrentTime()}</span>检查 Chrome 浏览器驱动...`;
-    logContainer.appendChild(driverMessage);
-    logContainer.scrollTop = logContainer.scrollHeight;
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY = 3000; // 3秒后重试
 
     // 移除初始提示
     const initialLog = logContainer.querySelector('.log-entry:first-child');
@@ -17,59 +14,83 @@ async function ensureDriver() {
         initialLog.remove();
     }
 
-    try {
-        const response = await fetch('/api/driver/download', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        });
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        const isRetry = attempt > 0;
+        const driverMessage = document.createElement('div');
+        driverMessage.className = 'log-entry';
+        if (isRetry) {
+            driverMessage.innerHTML = `<span class="log-time">${getCurrentTime()}</span>检查 Chrome 浏览器驱动...（第${attempt + 1}次尝试）`;
+        } else {
+            driverMessage.innerHTML = `<span class="log-time">${getCurrentTime()}</span>检查 Chrome 浏览器驱动...`;
+        }
+        logContainer.appendChild(driverMessage);
+        logContainer.scrollTop = logContainer.scrollHeight;
 
-        const data = await response.json();
+        try {
+            const response = await fetch('/api/driver/download', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
 
-        if (data.success) {
-            // 添加下载中的提示
-            const downloadingMessage = document.createElement('div');
-            downloadingMessage.className = 'log-entry';
-            downloadingMessage.innerHTML = `<span class="log-time">${getCurrentTime()}</span>正在下载匹配的 ChromeDriver...`;
-            logContainer.appendChild(downloadingMessage);
-            logContainer.scrollTop = logContainer.scrollHeight;
+            const data = await response.json();
 
-            // 延迟显示成功消息
-            await new Promise(resolve => setTimeout(resolve, 500));
+            if (data.success) {
+                // 添加下载中的提示
+                const downloadingMessage = document.createElement('div');
+                downloadingMessage.className = 'log-entry';
+                downloadingMessage.innerHTML = `<span class="log-time">${getCurrentTime()}</span>正在下载匹配的 ChromeDriver...`;
+                logContainer.appendChild(downloadingMessage);
+                logContainer.scrollTop = logContainer.scrollHeight;
 
-            const successMessage = document.createElement('div');
-            successMessage.className = 'log-entry';
-            successMessage.innerHTML = `<span class="log-time">${getCurrentTime()}</span>✓ ChromeDriver 准备完成`;
-            logContainer.appendChild(successMessage);
-            logContainer.scrollTop = logContainer.scrollHeight;
+                // 延迟显示成功消息
+                await new Promise(resolve => setTimeout(resolve, 500));
 
-            if (data.path) {
-                const pathMessage = document.createElement('div');
-                pathMessage.className = 'log-entry';
-                pathMessage.style.color = '#1976D2';
-                pathMessage.innerHTML = `<span class="log-time">${getCurrentTime()}</span>驱动路径: ${data.path}`;
-                logContainer.appendChild(pathMessage);
+                const successMessage = document.createElement('div');
+                successMessage.className = 'log-entry';
+                successMessage.innerHTML = `<span class="log-time">${getCurrentTime()}</span>✓ ChromeDriver 准备完成`;
+                logContainer.appendChild(successMessage);
+                logContainer.scrollTop = logContainer.scrollHeight;
+
+                if (data.path) {
+                    const pathMessage = document.createElement('div');
+                    pathMessage.className = 'log-entry';
+                    pathMessage.style.color = '#1976D2';
+                    pathMessage.innerHTML = `<span class="log-time">${getCurrentTime()}</span>驱动路径: ${data.path}`;
+                    logContainer.appendChild(pathMessage);
+                    logContainer.scrollTop = logContainer.scrollHeight;
+                }
+
+                // 更新进度条到步骤1
+                updateSteps(1);
+                return; // 成功，退出重试循环
+            } else {
+                const errorMessage = document.createElement('div');
+                errorMessage.className = 'log-entry';
+                errorMessage.style.color = '#FF5252';
+                errorMessage.innerHTML = `<span class="log-time">${getCurrentTime()}</span>✗ 驱动准备失败: ${data.message}`;
+                logContainer.appendChild(errorMessage);
                 logContainer.scrollTop = logContainer.scrollHeight;
             }
-
-            // 更新进度条到步骤1
-            updateSteps(1);
-        } else {
+        } catch (error) {
             const errorMessage = document.createElement('div');
             errorMessage.className = 'log-entry';
             errorMessage.style.color = '#FF5252';
-            errorMessage.innerHTML = `<span class="log-time">${getCurrentTime()}</span>✗ 驱动准备失败: ${data.message}`;
+            errorMessage.innerHTML = `<span class="log-time">${getCurrentTime()}</span>✗ 驱动准备失败: ${error.message}`;
             logContainer.appendChild(errorMessage);
             logContainer.scrollTop = logContainer.scrollHeight;
         }
-    } catch (error) {
-        const errorMessage = document.createElement('div');
-        errorMessage.className = 'log-entry';
-        errorMessage.style.color = '#FF5252';
-        errorMessage.innerHTML = `<span class="log-time">${getCurrentTime()}</span>✗ 驱动准备失败: ${error.message}`;
-        logContainer.appendChild(errorMessage);
-        logContainer.scrollTop = logContainer.scrollHeight;
+
+        // 如果不是最后一次尝试，等待后重试
+        if (attempt < MAX_RETRIES - 1) {
+            const retryMsg = document.createElement('div');
+            retryMsg.className = 'log-entry';
+            retryMsg.innerHTML = `<span class="log-time">${getCurrentTime()}</span>${RETRY_DELAY / 1000}秒后重试...`;
+            logContainer.appendChild(retryMsg);
+            logContainer.scrollTop = logContainer.scrollHeight;
+            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+        }
     }
 }
 

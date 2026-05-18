@@ -98,14 +98,70 @@ class BrowserManager:
         return options
 
     @staticmethod
-    def create_driver(options: Options | None = None) -> webdriver.Chrome:
+    def _find_cached_driver() -> str | None:
+        """在本地缓存中查找与当前 Chrome 版本匹配的 chromedriver"""
+        from webdriver_manager.core.os_manager import OperationSystemManager, ChromeType
+        from packaging.version import parse as parse_version
+
+        # 获取本机 Chrome 浏览器版本（无需联网）
+        try:
+            os_mgr = OperationSystemManager()
+            browser_version = os_mgr.get_browser_version_from_os(ChromeType.GOOGLE)
+        except Exception:
+            return None
+
+        if not browser_version:
+            return None
+
+        logger.info(f"本机 Chrome 浏览器版本: {browser_version}")
+        major_version = browser_version.split(".")[0]
+
+        cache_dir = os.path.join(os.path.expanduser("~"), ".wdm", "drivers", "chromedriver", "win64")
+        if not os.path.isdir(cache_dir):
+            return None
+
+        # 在缓存目录中查找与当前浏览器主版本号匹配的驱动，选最新版本
+        best_match = None
+        best_version = None
+        for entry in os.listdir(cache_dir):
+            entry_path = os.path.join(cache_dir, entry)
+            if not os.path.isdir(entry_path):
+                continue
+            # 版本目录名如 "148.0.7778.167"
+            if not entry.startswith(major_version + "."):
+                continue
+            # 在版本目录下查找 chromedriver.exe
+            for root, dirs, files in os.walk(entry_path):
+                if "chromedriver.exe" in files:
+                    try:
+                        entry_ver = parse_version(entry)
+                    except Exception:
+                        entry_ver = None
+                    if entry_ver and (best_version is None or entry_ver > best_version):
+                        best_version = entry_ver
+                        best_match = os.path.join(root, "chromedriver.exe")
+                    break
+
+        return best_match
+
+    @staticmethod
+    def create_driver(options: Options | None = None,
+                      log_callback: Callable[[str], None] | None = None) -> webdriver.Chrome:
         """创建驱动"""
+        log = log_callback or logger.info
+
         if options is None:
             options = BrowserManager.create_options()
 
-        logger.info("检查 Chrome 浏览器驱动...")
-        driver_path = ChromeDriverManager().install()
-        logger.info(f"驱动检查成功！驱动路径: {driver_path}")
+        log("检查 Chrome 浏览器驱动...")
+        # 优先使用本地缓存的驱动，避免不必要的网络请求
+        driver_path = BrowserManager._find_cached_driver()
+        if driver_path:
+            log(f"使用本地缓存驱动: {driver_path}")
+        else:
+            log("本地无缓存驱动，在线下载中...")
+            driver_path = ChromeDriverManager().install()
+        log(f"驱动检查成功！驱动路径: {driver_path}")
 
         driver = webdriver.Chrome(service=ChromeService(driver_path), options=options)
 
@@ -133,7 +189,7 @@ class BrowserManager:
         # 将浏览器窗口放在屏幕右侧，避免遮挡前端界面
         driver.set_window_size(1200, 800)
         driver.set_window_position(1400, 0)
-        logger.info("浏览器初始化完成")
+        log("浏览器初始化完成")
         return driver
 
 
@@ -496,7 +552,7 @@ class SeckillWorker:
         try:
             # 初始化浏览器
             self.log("初始化浏览器...")
-            self.driver = BrowserManager.create_driver()
+            self.driver = BrowserManager.create_driver(log_callback=self.log)
 
             # 导航并登录（等待用户确认）
             self._navigate_and_login(login_wait)

@@ -7,7 +7,7 @@ import os
 import json
 from collections import deque
 
-from seckill import SeckillWorker
+from seckill import SeckillWorker, BrowserManager
 
 # 设置项目根目录
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -131,13 +131,18 @@ def download_driver():
         from webdriver_manager.chrome import ChromeDriverManager
 
         logger.info("开始检查 Chrome 浏览器版本...")
-        driver_manager = ChromeDriverManager()
-        logger.info("正在下载匹配的 ChromeDriver...")
-        driver_path = driver_manager.install()
+        # 优先使用本地缓存的驱动
+        driver_path = BrowserManager._find_cached_driver()
+
+        if driver_path:
+            logger.info(f"使用本地缓存驱动: {driver_path}")
+        else:
+            logger.info("本地无缓存驱动，正在下载匹配的 ChromeDriver...")
+            driver_manager = ChromeDriverManager()
+            driver_path = driver_manager.install()
 
         logger.info(f"ChromeDriver 准备完成，路径: {driver_path}")
 
-        # 返回详细的消息
         return jsonify({
             'success': True,
             'message': '驱动准备完成',
