@@ -506,27 +506,101 @@ class SeckillWorker:
         else:
             return f"{seconds}秒"
 
-    def _perform_seckill(self, max_retries: int = 10):
+    def _perform_seckill(self, max_retries: int = 300):
         """执行抢购"""
         self.log("开始抢购！")
-        success = False
-        i = 0
+        retry = 0
 
-        while self.running and not success and i < max_retries and self.driver:
+        while self.running and retry < max_retries and self.driver:
             try:
                 btn = self.driver.find_element(By.CLASS_NAME, self.config.settle_button_class)
-                if self._click_element_safely(btn):
-                    self.log("✓ 抢购成功！请尽快付款")
-                    now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
-                    self.log(f"抢购时间：{now}")
-                    success = True
-            except Exception:
-                i += 1
-                time.sleep(0.1)
-                if i % 5 == 0:
-                    self.log(f"尝试中... 第{i}次")
 
-        return success
+                # 检查按钮是否被禁用（灰色不可点击状态）
+                disabled = btn.get_attribute('disabled')
+                aria_disabled = btn.get_attribute('aria-disabled')
+                classes = btn.get_attribute('class') or ''
+                if disabled is not None or aria_disabled == 'true' or 'disabled' in classes.lower() or 'unable' in classes.lower():
+                    retry += 1
+                    time.sleep(0.05)
+                    continue
+
+                self.log("检测到结算按钮已激活，点击提交...")
+                if self._click_element_safely(btn):
+                    # 点击后验证订单是否真正提交成功
+                    if self._verify_order_submitted():
+                        self.log("✓ 抢购成功！请尽快付款")
+                        now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
+                        self.log(f"抢购时间：{now}")
+                        return True
+                    else:
+                        retry += 1
+                        time.sleep(0.2)
+                        if retry % 10 == 0:
+                            self.log(f"订单提交未确认... 第{retry}次")
+                else:
+                    retry += 1
+                    time.sleep(0.1)
+            except NoSuchElementException:
+                retry += 1
+                time.sleep(0.1)
+                if retry % 10 == 0:
+                    self.log(f"等待结算按钮出现... 第{retry}次")
+            except Exception:
+                retry += 1
+                time.sleep(0.1)
+                if retry % 10 == 0:
+                    self.log(f"尝试中... 第{retry}次")
+
+        self.log("抢购结束，未成功")
+        return False
+
+    def _verify_order_submitted(self) -> bool:
+        """验证订单是否真正提交成功——检查页面跳转和内容"""
+        if not self.driver:
+            return False
+
+        # 等待页面响应（跳转或弹窗）
+        time.sleep(1)
+
+        try:
+            current_url = self.driver.current_url
+
+            # 检查页面上是否有失败/错误提示
+            page_text = self.driver.execute_script("return document.body.innerText || '';")
+            error_keywords = [
+                '抢光', '已抢光', '已售罄', '下单失败', '网络繁忙',
+                '人数过多', '没抢到', '已下架', '库存不足', '活动太火爆',
+                '该商品已下架', '商品已卖完', '再接再厉', '下单人数过多',
+                '很遗憾', '暂时无法', '已失效', '已抢完',
+            ]
+            for kw in error_keywords:
+                if kw in page_text:
+                    self.log(f"检测到失败提示: {kw}")
+                    return False
+
+            # 检查成功指标 —— URL 跳转
+            success_url_markers = {
+                'jd': ['getOrderInfo', 'pay', 'success', 'cashier'],
+                'tb': ['buy.tmall', 'buy.taobao', 'cashier', 'alipay', 'trade_detail'],
+                'bb': ['pay', 'order', 'success'],
+            }
+            markers = success_url_markers.get(self.platform, ['pay', 'order', 'success'])
+            for marker in markers:
+                if marker in current_url:
+                    self.log(f"页面已跳转: {current_url}")
+                    return True
+
+            # 检查成功指标 —— 页面内容
+            success_texts = ['下单成功', '订单提交成功', '恭喜', '等待支付', '请尽快付款', '订单号']
+            for text in success_texts:
+                if text in page_text:
+                    self.log(f"检测到成功提示: {text}")
+                    return True
+
+        except Exception:
+            pass
+
+        return False
 
     def start_seckill(
         self,
