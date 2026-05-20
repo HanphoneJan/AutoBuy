@@ -497,8 +497,8 @@ class SeckillWorker:
             # 计算剩余时间（秒）
             time_left_seconds = (target_dt - network_time).total_seconds()
 
-            # 提前15秒开始刷新商品状态
-            if time_left_seconds <= 15 and not refresh_started:
+            # 提前7秒开始刷新商品状态
+            if time_left_seconds <= 7 and not refresh_started:
                 self.log("开始刷新商品状态...")
                 refresh_started = True
 
