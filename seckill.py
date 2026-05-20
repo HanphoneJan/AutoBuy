@@ -469,32 +469,42 @@ class SeckillWorker:
             pass
 
     def _wait_for_target_time(self, target_time: str):
-        """等待到达目标时间（使用网络时间）"""
-        # 解析目标时间为datetime对象
+        """等待到达目标时间（使用网络时间校准的本地时间）"""
         target_dt = self._parse_time_string(target_time)
         if target_dt is None:
             self.log(f"错误：无法解析目标时间 {target_time}")
             return
 
-        # 使用网络时间记录日志，保持时间一致
+        # 一次校准：获取网络时间与本地时间的偏移量（避免循环内反复 HTTP 请求）
         network_timestamp_ms = TimeManager.get_network_time(self.platform)
+        offset_ms = network_timestamp_ms - round(time.time() * 1000)
         network_time = datetime.datetime.fromtimestamp(network_timestamp_ms / 1000)
         network_time_str = network_time.strftime('%H:%M:%S')
         self.log(f"[{network_time_str}] 等待到达抢购时间 {target_time}...")
 
         last_log_time = 0
+        last_calibrate = time.time()
         refresh_started = False
 
         while self.running:
-            # 使用网络时间
-            network_timestamp_ms = TimeManager.get_network_time(self.platform)
-            network_time = datetime.datetime.fromtimestamp(network_timestamp_ms / 1000)
+            # 使用本地时间 + 偏移量代替网络请求（消除 HTTP 延迟）
+            now_local = time.time()
+            calibrated_ms = round(now_local * 1000) + offset_ms
+            network_time = datetime.datetime.fromtimestamp(calibrated_ms / 1000)
+
+            # 每30秒重新校准一次偏移量，防止时钟漂移
+            if now_local - last_calibrate > 30:
+                try:
+                    fresh_network_ms = TimeManager.get_network_time(self.platform)
+                    offset_ms = fresh_network_ms - round(time.time() * 1000)
+                    last_calibrate = time.time()
+                except Exception:
+                    pass
 
             if network_time >= target_dt:
                 self.log("抢购时间已到！")
                 break
 
-            # 计算剩余时间（秒）
             time_left_seconds = (target_dt - network_time).total_seconds()
 
             # 提前7秒开始刷新商品状态
@@ -502,19 +512,18 @@ class SeckillWorker:
                 self.log("开始刷新商品状态...")
                 refresh_started = True
 
-            # 刷新状态期间，每100ms刷新一次
+            # 刷新状态期间，每50ms刷新一次
             if refresh_started and time_left_seconds > 0:
                 self._refresh_item_status()
-                time.sleep(0.1)
+                time.sleep(0.05)
                 continue
 
             # 每10秒输出一次等待日志
-            current_time = time.time()
-            if current_time - last_log_time >= 10:
+            if now_local - last_log_time >= 10:
                 time_left = self._calculate_time_left_dt(target_dt, network_time)
                 network_time_str = network_time.strftime('%H:%M:%S')
                 self.log(f"[{network_time_str}] 距离抢购还有 {time_left}...")
-                last_log_time = current_time
+                last_log_time = now_local
             time.sleep(0.1)
 
     def _parse_time_string(self, time_str: str) -> datetime.datetime | None:
