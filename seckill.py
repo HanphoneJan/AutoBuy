@@ -79,19 +79,59 @@ PLATFORM_CONFIGS = {
 class BrowserManager:
     """浏览器管理器"""
 
+    # 反自动化检测脚本（在页面加载前注入，对抗淘宝/京东的 bot 检测）
+    STEALTH_SCRIPT = """
+        (function() {
+            // 隐藏 webdriver 痕迹
+            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+            // 删除 CDC 调试标记
+            delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
+            delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;
+            delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
+            // 伪造 plugins（正常 Chrome 有 5 个内置插件，自动化浏览器为空）
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => {
+                    var plugins = [1, 2, 3, 4, 5];
+                    plugins.item = function(i) { return this[i]; };
+                    plugins.namedItem = function(name) { return null; };
+                    plugins.refresh = function() {};
+                    return plugins;
+                }
+            });
+            // 确保 chrome 对象存在
+            if (!window.chrome) {
+                window.chrome = { runtime: {}, loadTimes: function() {}, csi: function() {}, app: {} };
+            }
+        })();
+    """
+
     OVERLAY_REMOVAL_SCRIPT = """
         (function() {
-            const removeOverlay = () => {
+            var isLoginElement = function(el) {
+                // 检查是否是登录相关元素，不能误删
+                var html = (el.innerHTML || '').toLowerCase();
+                if (html.indexOf('登录') !== -1 || html.indexOf('扫码') !== -1 ||
+                    html.indexOf('password') !== -1 || html.indexOf('qrcode') !== -1 ||
+                    html.indexOf('iframe') !== -1) return true;
+                // 包含交互控件的不能删
+                if (el.querySelectorAll('input, button, a, iframe, img[src*="qrcode"], img[src*="qr"], [class*="login"], [class*="qrcode"]').length > 0) return true;
+                return false;
+            };
+
+            var removeOverlay = function() {
                 // --- 淘宝专用 ---
                 var tw = document.querySelector('.J_MIDDLEWARE_FRAME_WIDGET');
-                if (tw) tw.remove();
-                document.querySelectorAll('[style*="z-index: 2147483647"]').forEach(function(el) { el.remove(); });
+                if (tw && !isLoginElement(tw)) tw.remove();
+                document.querySelectorAll('[style*="z-index: 2147483647"]').forEach(function(el) {
+                    if (!isLoginElement(el)) el.remove();
+                });
 
                 // --- 京东专用 ---
-                document.querySelectorAll('.login-box, .o2_curev, .o2_mixv').forEach(function(el) { el.remove(); });
-                document.querySelectorAll('.op-c5, .ui-widget-overlay').forEach(function(el) { el.remove(); });
+                document.querySelectorAll('.op-c5, .ui-widget-overlay').forEach(function(el) {
+                    if (!isLoginElement(el)) el.remove();
+                });
 
-                // --- 通用全屏遮罩检测 ---
+                // --- 通用全屏遮罩检测（只移除无交互内容的纯遮罩层） ---
                 document.querySelectorAll('div, section, span').forEach(function(el) {
                     var style = getComputedStyle(el);
                     var zIndex = parseInt(style.zIndex, 10);
@@ -101,6 +141,8 @@ class BrowserManager:
                         style.left === '0px' &&
                         el.offsetWidth >= window.innerWidth * 0.9 &&
                         el.offsetHeight >= window.innerHeight * 0.9) {
+                        // 跳过包含交互内容或登录元素的弹窗
+                        if (isLoginElement(el)) return;
                         var bg = style.backgroundColor;
                         if (bg === 'rgba(0, 0, 0, 0)' ||
                             bg === 'transparent' ||
@@ -124,16 +166,18 @@ class BrowserManager:
         """创建浏览器选项"""
         options = Options()
         if headless:
-            options.add_argument("--headless")
+            options.add_argument("--headless=new")
         options.add_argument("--disable-gpu")
         options.add_argument("--no-sandbox")
-        options.add_argument("--incognito")
-        options.add_argument("--disable-blink-features")
         options.add_argument("--disable-blink-features=AutomationControlled")
+        options.add_argument("--disable-features=Translate,OptimizationHints,MediaRouter,DialMediaRouteProvider")
         options.add_experimental_option("excludeSwitches", ["enable-automation"])
         options.add_experimental_option("useAutomationExtension", False)
+        # 关闭"Chrome 正受到自动测试软件的控制"提示条
+        options.add_argument("--disable-infobars")
 
-        user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0 Safari/537.36"
+        # 使用较新的 Chrome 版本 UA，匹配本地浏览器版本
+        user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
         options.add_argument(f'user-agent={user_agent}')
         return options
 
@@ -205,13 +249,9 @@ class BrowserManager:
 
         driver = webdriver.Chrome(service=ChromeService(driver_path), options=options)
 
-        # 移除 webdriver 特征并移除遮罩层
+        # 注入反检测脚本和遮罩移除脚本（页面加载前执行）
         driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
-            "source": """
-                Object.defineProperty(navigator, 'webdriver', {
-                    get: () => undefined
-                });
-            """ + BrowserManager.OVERLAY_REMOVAL_SCRIPT
+            "source": BrowserManager.STEALTH_SCRIPT + BrowserManager.OVERLAY_REMOVAL_SCRIPT
         })
 
         # 设置窗口大小和位置，避免遮挡前端界面
