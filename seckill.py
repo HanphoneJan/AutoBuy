@@ -309,6 +309,12 @@ class TimeManager:
             return TimeManager.get_tb_time()
         return round(time.time() * 1000)
 
+    @staticmethod
+    def get_network_time_str(platform: str, fmt: str = '%H:%M:%S') -> str:
+        """获取网络时间格式化字符串"""
+        timestamp_ms = TimeManager.get_network_time(platform)
+        return datetime.datetime.fromtimestamp(timestamp_ms / 1000).strftime(fmt)
+
 
 class SeckillWorker:
     """抢购工作器"""
@@ -502,14 +508,16 @@ class SeckillWorker:
                     pass
 
             if network_time >= target_dt:
-                self.log("抢购时间已到！")
+                network_time_str = network_time.strftime('%H:%M:%S')
+                self.log(f"[{network_time_str}] 抢购时间已到！")
                 break
 
             time_left_seconds = (target_dt - network_time).total_seconds()
 
             # 提前7秒开始刷新商品状态
             if time_left_seconds <= 7 and not refresh_started:
-                self.log("开始刷新商品状态...")
+                network_time_str = network_time.strftime('%H:%M:%S')
+                self.log(f"[{network_time_str}] 开始刷新商品状态...")
                 refresh_started = True
 
             # 刷新状态期间，每50ms刷新一次
@@ -578,7 +586,7 @@ class SeckillWorker:
                     # 点击后验证订单是否真正提交成功
                     if self._verify_order_submitted():
                         self.log("✓ 抢购成功！请尽快付款")
-                        now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
+                        now = TimeManager.get_network_time_str(self.platform, '%Y-%m-%d %H:%M:%S.%f')
                         self.log(f"抢购时间：{now}")
                         return True
                     else:
@@ -783,7 +791,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     def console_log(message):
-        print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] {message}")
+        now = TimeManager.get_network_time_str(args.platform, '%H:%M:%S')
+        print(f"[{now}] {message}")
 
     worker = SeckillWorker(args.platform, log_callback=console_log)
     worker.start_seckill(target_time=args.time, login_wait=args.login_wait)

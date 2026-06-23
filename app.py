@@ -49,7 +49,13 @@ class TaskManager:
 
     def add_log(self, task_id, message):
         if task_id in self.tasks:
-            timestamp = datetime.now().strftime('%H:%M:%S')
+            # 如果消息已包含网络时间戳，提取并使用它；否则使用本地时间作为后备
+            import re
+            network_time_match = re.match(r'^\[(\d{2}:\d{2}:\d{2})\]\s*', message)
+            if network_time_match:
+                timestamp = network_time_match.group(1)
+            else:
+                timestamp = datetime.now().strftime('%H:%M:%S')
             self.tasks[task_id]['logs'].append({
                 'time': timestamp,
                 'message': message
