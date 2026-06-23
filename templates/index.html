@@ -44,9 +44,10 @@
                     <li>点击"开始抢购"按钮</li>
                     <li>在弹出的浏览器中扫码登录京东账号</li>
                     <li>登录完成后，点击页面上的"确认登录"按钮</li>
-                    <li>手动进入购物车，勾选需要抢购的商品</li>
-                    <li>点击页面上的"确认购物车"按钮</li>
-                    <li>等待到达抢购时间，系统自动提交订单</li>
+                    <li>填写京东商品关键词，用于定位购物车中的目标商品</li>
+                    <li>手动进入购物车，确认目标商品可见</li>
+                    <li>预约阶段无法勾选是正常现象，直接点击页面上的"确认购物车"</li>
+                    <li>到达抢购时间后，系统自动勾选、结算并提交订单</li>
                 </ol>
             </div>
             <div class="sidebar-instructions" id="tbInstructions">
@@ -110,6 +111,14 @@
                                 <option value="800">800</option>
                                 <option value="900">900</option>
                             </select>
+                        </div>
+                        <div class="form-group" id="jdKeywordGroup" style="min-width: 240px; display: none;">
+                            <label for="jdProductKeyword">京东商品关键词</label>
+                            <input
+                                type="text"
+                                id="jdProductKeyword"
+                                placeholder="例如：品牌 型号 套装"
+                            >
                         </div>
                     </div>
                     <div class="quick-select">
@@ -235,13 +244,16 @@
             const platform = document.querySelector('input[name="platform"]:checked').value;
             const jdInstructions = document.getElementById('jdInstructions');
             const tbInstructions = document.getElementById('tbInstructions');
+            const jdKeywordGroup = document.getElementById('jdKeywordGroup');
 
             if (platform === 'jd') {
                 jdInstructions.style.display = 'block';
                 tbInstructions.style.display = 'none';
+                if (jdKeywordGroup) jdKeywordGroup.style.display = 'block';
             } else if (platform === 'tb') {
                 jdInstructions.style.display = 'none';
                 tbInstructions.style.display = 'block';
+                if (jdKeywordGroup) jdKeywordGroup.style.display = 'none';
             }
         }
 

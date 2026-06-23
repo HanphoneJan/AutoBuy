@@ -51,8 +51,8 @@ PLATFORM_CONFIGS = {
         name='京东',
         url='https://www.jd.com',
         login_text='你好，请登录',
-        cart_url='https://trade.jd.com/shopping/order/getOrderInfo.action',
-        settle_button_class='checkout-submit',
+        cart_url='https://cart.jd.com/cart_index',
+        settle_button_class='',
         submit_button_css='.checkout-submit'
     ),
     'tb': PlatformConfig(
@@ -248,6 +248,7 @@ class BrowserManager:
         log(f"驱动检查成功！驱动路径: {driver_path}")
 
         driver = webdriver.Chrome(service=ChromeService(driver_path), options=options)
+        driver.set_page_load_timeout(12)
 
         # 注入反检测脚本和遮罩移除脚本（页面加载前执行）
         driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
@@ -319,7 +320,12 @@ class TimeManager:
 class SeckillWorker:
     """抢购工作器"""
 
-    def __init__(self, platform: str, log_callback: Callable[[str], None] | None = None):
+    def __init__(
+        self,
+        platform: str,
+        log_callback: Callable[[str], None] | None = None,
+        product_keyword: str | None = None
+    ):
         """
         初始化抢购工作器
         :param platform: 平台名称 (jd/tb/bb)
@@ -336,6 +342,10 @@ class SeckillWorker:
         # 使用字典来存储确认状态，避免属性访问问题
         self._confirm_states = {}
         self.log_callback: Callable[[str], None] = log_callback or logger.info
+        # 京东预约商品在开售前无法勾选。按商品标题定位，避免误选购物车中的其他商品。
+        self.jd_product_keyword = (
+            product_keyword or os.environ.get("JD_PRODUCT_KEYWORD", "")
+        ).strip()
 
     def log(self, message: str):
         """记录日志"""
@@ -440,6 +450,28 @@ class SeckillWorker:
                     time.sleep(0.1)
         return False
 
+    def _ensure_active_window(self) -> bool:
+        """当前标签被手动关闭时，自动接管同一自动化浏览器中的剩余标签。"""
+        if not self.driver:
+            return False
+        try:
+            _ = self.driver.current_url
+            return True
+        except Exception:
+            pass
+
+        try:
+            handles = self.driver.window_handles
+            if not handles:
+                self.log("自动化浏览器中已没有可用标签页")
+                return False
+            self.driver.switch_to.window(handles[-1])
+            self.log("检测到原控制标签已关闭，已自动接管剩余标签页")
+            return True
+        except Exception as e:
+            self.log(f"恢复浏览器标签失败：{e}")
+            return False
+
     def _refresh_item_status(self):
         """通过切换号码保护复选框刷新商品状态"""
         if not self.driver:
@@ -472,6 +504,105 @@ class SeckillWorker:
 
         except Exception:
             # 元素不存在或操作失败，静默处理
+            pass
+
+    def _page_text(self) -> str:
+        if not self.driver:
+            return ""
+        try:
+            return self.driver.execute_script(
+                "return document.body ? document.body.innerText : '';"
+            ) or ""
+        except Exception:
+            return ""
+
+    def _find_failure_keyword(self, page_text: str) -> str | None:
+        failure_keywords = [
+            '购买超出限制', '超出购买限制', '超出限购', '已达购买上限',
+            '抢光', '已抢光', '已售罄', '下单失败', '网络繁忙',
+            '人数过多', '没抢到', '已下架', '库存不足', '活动太火爆',
+            '该商品已下架', '商品已卖完', '再接再厉', '下单人数过多',
+            '很遗憾', '暂时无法', '已失效', '已抢完',
+        ]
+        return next((kw for kw in failure_keywords if kw in page_text), None)
+
+    def _find_action_button(self, action: str):
+        """按可见文字定位最像操作按钮的元素，兼容频繁变化的动态 class。"""
+        if not self.driver:
+            return None
+        script = """
+            const action = arguments[0];
+            const visible = (el) => {
+                if (!el) return false;
+                const rect = el.getBoundingClientRect();
+                const style = getComputedStyle(el);
+                return rect.width > 0 && rect.height > 0 &&
+                    style.display !== 'none' && style.visibility !== 'hidden';
+            };
+            const textOf = (el) => (
+                el.innerText || el.value || el.textContent || ''
+            ).replace(/\\s+/g, ' ').trim();
+            const disabled = (el) => {
+                const text = textOf(el);
+                return Boolean(
+                    el.disabled ||
+                    el.getAttribute('aria-disabled') === 'true' ||
+                    /disabled|unable/.test(String(el.className || '').toLowerCase()) ||
+                    /\\(0\\)|（0）/.test(text)
+                );
+            };
+            const matches = (text) => {
+                if (action === 'submit') return text.includes('提交订单');
+                if (action === 'checkout') {
+                    return text.startsWith('结算') || text.startsWith('去结算');
+                }
+                return false;
+            };
+            const nodes = Array.from(document.querySelectorAll(
+                'button, a, [role="button"], input[type="button"], ' +
+                'input[type="submit"], div, span'
+            ));
+            const candidates = [];
+            const seen = new Set();
+            for (const node of nodes) {
+                if (!visible(node)) continue;
+                const text = textOf(node);
+                if (!matches(text) || text.length > 60) continue;
+                const target = node.closest(
+                    'button, a, [role="button"], input[type="button"], input[type="submit"]'
+                ) || node;
+                if (!visible(target) || disabled(target) || seen.has(target)) continue;
+                seen.add(target);
+                const rect = target.getBoundingClientRect();
+                let score = 0;
+                if (/^(BUTTON|A|INPUT)$/.test(target.tagName)) score += 30;
+                if (action === 'submit' && text === '提交订单') score += 30;
+                if (action === 'checkout' && /^(去)?结算/.test(text)) score += 20;
+                if (rect.width >= 80 && rect.width <= 500) score += 10;
+                if (rect.height >= 28 && rect.height <= 100) score += 10;
+                score += Math.min(rect.left / 100, 15);
+                score += Math.min(rect.top / 100, 10);
+                score -= Math.min((rect.width * rect.height) / 100000, 20);
+                candidates.push({ target, score });
+            }
+            candidates.sort((a, b) => b.score - a.score);
+            return candidates.length ? candidates[0].target : null;
+        """
+        try:
+            return self.driver.execute_script(script, action)
+        except Exception:
+            return None
+
+    def _wait_for_document_ready(self, timeout: float = 5.0):
+        if not self.driver:
+            return
+        try:
+            WebDriverWait(self.driver, timeout).until(
+                lambda d: d.execute_script(
+                    "return document.readyState"
+                ) in ('interactive', 'complete')
+            )
+        except Exception:
             pass
 
     def _wait_for_target_time(self, target_time: str):
@@ -522,7 +653,13 @@ class SeckillWorker:
 
             # 刷新状态期间，每50ms刷新一次
             if refresh_started and time_left_seconds > 0:
-                self._refresh_item_status()
+                # 淘宝仅在购物车页通过控件触发状态更新；确认订单页无需刷新。
+                if self.platform == 'tb' and self.driver:
+                    try:
+                        if 'cart.taobao.com' in self.driver.current_url:
+                            self._refresh_item_status()
+                    except Exception:
+                        pass
                 time.sleep(0.05)
                 continue
 
@@ -565,6 +702,11 @@ class SeckillWorker:
 
     def _perform_seckill(self, max_retries: int = 300):
         """执行抢购"""
+        if self.platform == 'jd':
+            return self._perform_jd_seckill(max_retries=max_retries)
+        if self.platform == 'tb':
+            return self._perform_tb_seckill()
+
         self.log("开始抢购！")
         retry = 0
 
@@ -611,6 +753,303 @@ class SeckillWorker:
         self.log("抢购结束，未成功")
         return False
 
+    def _perform_tb_seckill(self, max_wait_seconds: float = 75):
+        """淘宝：根据当前页面状态执行购物车结算或确认页提交。"""
+        if not self._ensure_active_window():
+            return False
+
+        self.log("开始淘宝抢购，按当前页面状态执行...")
+        deadline = time.monotonic() + max_wait_seconds
+        last_status_log = 0.0
+        clicked_submit = False
+
+        while self.running and self.driver and time.monotonic() < deadline:
+            try:
+                if not self._ensure_active_window():
+                    time.sleep(0.2)
+                    continue
+
+                current_url = self.driver.current_url
+                page_text = self._page_text()
+                failure = self._find_failure_keyword(page_text)
+                if failure:
+                    self.log(f"淘宝下单失败：检测到“{failure}”")
+                    return False
+
+                if any(marker in current_url.lower() for marker in (
+                    'alipay', 'cashier', 'trade_detail', 'pay.htm', 'payment'
+                )):
+                    self.log(f"已进入付款页面：{current_url}")
+                    return True
+                if any(text in page_text for text in (
+                    '等待支付', '请尽快付款', '订单提交成功', '订单号'
+                )):
+                    self.log("检测到淘宝订单已提交，请尽快付款")
+                    return True
+
+                on_confirm_page = (
+                    'confirm_order' in current_url or
+                    'buy.tmall.com' in current_url or
+                    'buy.taobao.com' in current_url or
+                    '确认订单' in page_text
+                )
+                if on_confirm_page:
+                    submit = self._find_action_button('submit')
+                    if submit:
+                        if self._click_element_safely(submit):
+                            if not clicked_submit:
+                                self.log("已点击淘宝“提交订单”，等待下单结果...")
+                                clicked_submit = True
+                            time.sleep(0.4)
+                            continue
+                elif 'cart.taobao.com' in current_url:
+                    checkout = self._find_action_button('checkout')
+                    if checkout and self._click_element_safely(checkout):
+                        self.log("已点击淘宝结算，等待进入确认订单页...")
+                        time.sleep(0.5)
+                        continue
+                else:
+                    # 页面 URL 改版时仍尝试按按钮文字执行。
+                    submit = self._find_action_button('submit')
+                    if submit and self._click_element_safely(submit):
+                        self.log("已点击淘宝“提交订单”，等待下单结果...")
+                        clicked_submit = True
+                        time.sleep(0.4)
+                        continue
+
+                now = time.monotonic()
+                if now - last_status_log >= 5:
+                    state = "确认订单页" if on_confirm_page else "等待可操作页面"
+                    self.log(f"淘宝仍在{state}，继续重试...")
+                    last_status_log = now
+                time.sleep(0.1)
+            except Exception as e:
+                now = time.monotonic()
+                if now - last_status_log >= 5:
+                    self.log(f"淘宝页面操作异常，继续重试：{e}")
+                    last_status_log = now
+                time.sleep(0.2)
+
+        self.log("淘宝抢购超时，未检测到订单提交成功")
+        return False
+
+    def _perform_jd_seckill(self, max_retries: int = 600):
+        """京东预约商品：刷新购物车直到解锁，再勾选、结算并提交。"""
+        if not self._ensure_active_window():
+            return False
+
+        if not self.jd_product_keyword:
+            self.log("请先设置京东商品关键字，用于定位需要抢购的购物车商品")
+            return False
+
+        self.log(f"开始京东抢购，目标商品关键字：{self.jd_product_keyword}")
+        checkbox_script = """
+            const keyword = (arguments[0] || '').toLowerCase();
+            const visible = (el) => {
+                if (!el) return false;
+                const rect = el.getBoundingClientRect();
+                const style = getComputedStyle(el);
+                return rect.width > 0 && rect.height > 0 &&
+                    style.display !== 'none' && style.visibility !== 'hidden';
+            };
+            const textOf = (el) => (el.innerText || '').replace(/\\s+/g, ' ').trim();
+            const rows = Array.from(document.querySelectorAll('div, li, tr, section'))
+                .filter((el) => {
+                    const rect = el.getBoundingClientRect();
+                    return visible(el) && rect.width > 500 && rect.height >= 80 &&
+                        rect.height <= 500 && textOf(el).toLowerCase().includes(keyword);
+                })
+                .sort((a, b) => a.getBoundingClientRect().height - b.getBoundingClientRect().height);
+
+            for (const row of rows) {
+                const scopes = [];
+                let scope = row;
+                for (let i = 0; i < 8 && scope; i++, scope = scope.parentElement) {
+                    scopes.push(scope);
+                }
+                for (const scope of scopes) {
+                    if (!scope) continue;
+                    const candidates = Array.from(scope.querySelectorAll(
+                        'input[type="checkbox"], [role="checkbox"], label[class*="check"], ' +
+                        '[class*="checkbox"], [class*="check-box"], [class*="jdcheckbox"], ' +
+                        '[class*="cart-checkbox"], [class*="select"]'
+                    )).filter(visible);
+                    for (const candidate of candidates) {
+                        const candidateText = textOf(candidate).toLowerCase();
+                        if (candidateText.includes('全选')) continue;
+                        return candidate;
+                    }
+                }
+            }
+            return null;
+        """
+        checkout_script = """
+            const visible = (el) => {
+                if (!el) return false;
+                const rect = el.getBoundingClientRect();
+                const style = getComputedStyle(el);
+                return rect.width > 0 && rect.height > 0 &&
+                    style.display !== 'none' && style.visibility !== 'hidden';
+            };
+            const nodes = Array.from(document.querySelectorAll('button, a, div, span'))
+                .filter((el) => visible(el) && /^去结算/.test((el.innerText || '').trim()))
+                .sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width);
+            for (const node of nodes) {
+                const button = node.closest('button, a, [role="button"]') || node;
+                const text = (button.innerText || '').trim();
+                const disabled = button.disabled ||
+                    button.getAttribute('aria-disabled') === 'true' ||
+                    /disabled|unable/.test(button.className || '') ||
+                    /\\(0\\)|（0）/.test(text);
+                if (!disabled) return button;
+            }
+            return null;
+        """
+
+        checkout_clicked = False
+        deadline = time.monotonic() + 90
+        refresh_count = 0
+        last_state_log = 0.0
+
+        while self.running and self.driver and time.monotonic() < deadline:
+            if not self.running or not self.driver:
+                break
+
+            try:
+                if not self._ensure_active_window():
+                    time.sleep(0.2)
+                    continue
+                current_url = self.driver.current_url
+                if 'getOrderInfo' in current_url:
+                    checkout_clicked = True
+                    break
+
+                if 'cart.jd.com' not in current_url:
+                    self.driver.get(self.config.cart_url)
+                    self._wait_for_document_ready()
+
+                # 京东预约状态不会自行更新；每轮都真实刷新购物车。
+                try:
+                    self.driver.refresh()
+                except TimeoutException:
+                    try:
+                        self.driver.execute_script("window.stop();")
+                    except Exception:
+                        pass
+                self._wait_for_document_ready()
+                refresh_count += 1
+
+                checkbox = self.driver.execute_script(
+                    checkbox_script,
+                    self.jd_product_keyword
+                )
+                if checkbox:
+                    disabled = self.driver.execute_script(
+                        """
+                        const el = arguments[0];
+                        return Boolean(
+                            el.disabled ||
+                            el.getAttribute('aria-disabled') === 'true' ||
+                            /disabled|unable/.test(String(el.className || '').toLowerCase()) ||
+                            (el.parentElement &&
+                                /disabled|unable/.test(String(el.parentElement.className || '').toLowerCase()))
+                        );
+                        """,
+                        checkbox
+                    )
+                    selected = self.driver.execute_script(
+                        """
+                        const el = arguments[0];
+                        return Boolean(
+                            el.checked ||
+                            el.getAttribute('aria-checked') === 'true' ||
+                            /checked|selected/.test(el.className || '') ||
+                            (el.parentElement && /checked|selected/.test(el.parentElement.className || ''))
+                        );
+                        """,
+                        checkbox
+                    )
+                    if not disabled and not selected:
+                        self._click_element_safely(checkbox)
+                        time.sleep(0.15)
+
+                checkout = self.driver.execute_script(checkout_script)
+                if checkout and self._click_element_safely(checkout):
+                    self.log("已勾选目标商品并点击去结算，等待订单确认页...")
+                    checkout_clicked = True
+                    for _ in range(60):
+                        if not self.driver:
+                            break
+                        if (
+                            'getOrderInfo' in self.driver.current_url or
+                            self.driver.find_elements(By.CSS_SELECTOR, self.config.submit_button_css)
+                        ):
+                            break
+                        time.sleep(0.15)
+                    if 'getOrderInfo' in self.driver.current_url:
+                        break
+                    checkout_clicked = False
+
+                now = time.monotonic()
+                if now - last_state_log >= 5:
+                    page_text = self._page_text()
+                    if '购物车跑丢了' in page_text:
+                        state = "购物车暂时加载为空"
+                    elif checkbox and disabled:
+                        state = "目标商品仍未解锁"
+                    elif not checkbox:
+                        state = "尚未定位到目标商品复选框"
+                    else:
+                        state = "目标商品已出现，等待结算按钮"
+                    self.log(
+                        f"京东已刷新 {refresh_count} 次：{state}，继续重试..."
+                    )
+                    last_state_log = now
+            except Exception as e:
+                now = time.monotonic()
+                if now - last_state_log >= 5:
+                    self.log(f"京东购物车尝试中：{str(e)}")
+                    last_state_log = now
+            time.sleep(0.2)
+
+        if not checkout_clicked or not self.driver:
+            self.log("未能进入京东订单确认页")
+            return False
+
+        self.log("已进入订单确认页，准备提交订单...")
+        for retry in range(100):
+            if not self.running or not self.driver:
+                break
+            try:
+                buttons = self.driver.find_elements(
+                    By.CSS_SELECTOR,
+                    self.config.submit_button_css
+                )
+                action_button = self._find_action_button('submit')
+                if action_button:
+                    buttons.insert(0, action_button)
+                for button in buttons:
+                    if not button.is_displayed():
+                        continue
+                    disabled = (
+                        button.get_attribute('disabled') is not None or
+                        button.get_attribute('aria-disabled') == 'true' or
+                        'disabled' in (button.get_attribute('class') or '').lower()
+                    )
+                    if disabled:
+                        continue
+                    if self._click_element_safely(button):
+                        self.log("已点击提交订单，正在确认结果...")
+                        if self._verify_order_submitted():
+                            self.log("✓ 京东订单提交成功，请尽快付款")
+                            return True
+            except Exception:
+                pass
+            time.sleep(0.1)
+
+        self.log("京东订单提交未确认")
+        return False
+
     def _verify_order_submitted(self) -> bool:
         """验证订单是否真正提交成功——检查页面跳转和内容"""
         if not self.driver:
@@ -622,23 +1061,16 @@ class SeckillWorker:
         try:
             current_url = self.driver.current_url
 
-            # 检查页面上是否有失败/错误提示
             page_text = self.driver.execute_script("return document.body.innerText || '';")
-            error_keywords = [
-                '抢光', '已抢光', '已售罄', '下单失败', '网络繁忙',
-                '人数过多', '没抢到', '已下架', '库存不足', '活动太火爆',
-                '该商品已下架', '商品已卖完', '再接再厉', '下单人数过多',
-                '很遗憾', '暂时无法', '已失效', '已抢完',
-            ]
-            for kw in error_keywords:
-                if kw in page_text:
-                    self.log(f"检测到失败提示: {kw}")
-                    return False
+            failure = self._find_failure_keyword(page_text)
+            if failure:
+                self.log(f"检测到失败提示: {failure}")
+                return False
 
             # 检查成功指标 —— URL 跳转
             success_url_markers = {
-                'jd': ['getOrderInfo', 'pay', 'success', 'cashier'],
-                'tb': ['buy.tmall', 'buy.taobao', 'cashier', 'alipay', 'trade_detail'],
+                'jd': ['pay', 'success', 'cashier'],
+                'tb': ['cashier', 'alipay', 'trade_detail', 'payment'],
                 'bb': ['pay', 'order', 'success'],
             }
             markers = success_url_markers.get(self.platform, ['pay', 'order', 'success'])
@@ -666,7 +1098,7 @@ class SeckillWorker:
         test_load_time: bool = True,
         wait_for_login_confirm: bool = True,
         wait_for_cart_confirm: bool = True
-    ):
+    ) -> bool:
         """
         启动抢购流程
         :param target_time: 目标时间 (YYYY-MM-DD HH:MM:SS.ffffff)
@@ -685,7 +1117,7 @@ class SeckillWorker:
             # 导航并登录（等待用户确认）
             self._navigate_and_login(login_wait)
             if wait_for_login_confirm and not self._wait_for_user_confirm("login"):
-                return
+                return False
 
             # 等待用户确认购物车
             load_time = 0.5
@@ -695,14 +1127,25 @@ class SeckillWorker:
                 else:
                     self.log("登录成功！")
                     self.log("等待购物车确认...")
-                    self.log("请手动进入购物车，勾选需要抢购的商品，点击结算按钮进入结算界面")
+                    if self.platform == 'jd':
+                        target_tip = (
+                            f"目标商品“{self.jd_product_keyword}”"
+                            if self.jd_product_keyword else
+                            "需要抢购的目标商品"
+                        )
+                        self.log(
+                            f"请停留在京东购物车，并确认{target_tip}可见；"
+                            "预约商品现在无需勾选，开售后程序会自动勾选并结算"
+                        )
+                    else:
+                        self.log("请手动进入购物车，勾选需要抢购的商品，点击结算按钮进入结算界面")
                     self.log("然后点击页面上的'确认购物车'按钮...")
                     if not self._wait_for_user_confirm("cart"):
-                        return
+                        return False
                     self.log("购物车已确认，准备等待抢购时间...")
                     # 在购物车确认后测试当前页面（结算页）的加载时间
                     # 注意：不刷新页面，只检查结算按钮响应时间
-                    if test_load_time and target_time and self.driver:
+                    if test_load_time and target_time and self.driver and self.platform != 'jd':
                         try:
                             start = time.time()
                             WebDriverWait(self.driver, 2).until(
@@ -725,11 +1168,13 @@ class SeckillWorker:
             if success:
                 self.log("抢购成功！请尽快完成付款")
                 self.log("任务已完成，请手动关闭浏览器或点击页面上的'关闭浏览器'按钮")
+            return success
 
         except Exception as e:
             import traceback
             self.log(f"错误：{str(e)}")
             self.log(f"错误详情：{traceback.format_exc()}")
+            return False
 
     def _wait_for_user_confirm(self, stage: str) -> bool:
         """
