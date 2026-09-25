@@ -29,7 +29,7 @@
 | ----------- | --------------------------------------- |
 | 操作系统    | Windows 10 / Windows 11                 |
 | 开发工具    | PyCharm (Professional) / 任意Python IDE |
-| Python 版本 | >=3.8（推荐 3.12）                      |
+| Python 版本 | >=3.10（推荐 3.13）                     |
 | 浏览器      | Google Chrome（最新版）                 |
 | 包管理器    | uv（推荐）/ pip                         |
 
