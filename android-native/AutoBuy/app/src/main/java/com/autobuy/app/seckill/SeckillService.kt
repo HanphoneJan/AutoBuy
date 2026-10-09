@@ -10,10 +10,14 @@ import android.os.Build
 import android.os.IBinder
 import com.autobuy.app.R
 import com.autobuy.app.core.LogBus
+import com.autobuy.app.core.Permissions
+import com.autobuy.app.seckill.Stage
+import com.autobuy.app.ui.GuidanceOverlay
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 /** 前台服务：保证抢购期间进程存活，运行 [SeckillEngine]。 */
@@ -46,6 +50,7 @@ class SeckillService : Service() {
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private var overlay: GuidanceOverlay? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -59,6 +64,16 @@ class SeckillService : Service() {
 
         val platform = runCatching { Platform.valueOf(platformName) }.getOrDefault(Platform.TAOBAO)
         LogBus.add("任务启动：${platform.label}")
+
+        // 悬浮指引条（需「显示在其他应用上层」权限）
+        if (Permissions.canDrawOverlays(this)) {
+            overlay = GuidanceOverlay(this).also { it.update(Stage.IDLE.label, Stage.IDLE.tip) }
+            scope.launch {
+                LogBus.stage.collect { s -> overlay?.update(s.label, s.tip) }
+            }
+        } else {
+            LogBus.add("未授权「显示在其他应用上层」，无悬浮指引（可在首页开启）")
+        }
 
         scope.launch {
             try {
@@ -81,8 +96,11 @@ class SeckillService : Service() {
     }
 
     override fun onDestroy() {
+        overlay?.hide()
+        overlay = null
         scope.cancel()
         LogBus.setRunning(false)
+        LogBus.setStage(Stage.IDLE)
         super.onDestroy()
     }
 

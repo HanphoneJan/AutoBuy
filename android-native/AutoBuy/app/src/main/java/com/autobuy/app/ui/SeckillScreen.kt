@@ -5,6 +5,7 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -63,6 +64,7 @@ import com.autobuy.app.core.Permissions
 import com.autobuy.app.seckill.Platform
 import com.autobuy.app.seckill.SeckillConfig
 import com.autobuy.app.seckill.SeckillService
+import com.autobuy.app.seckill.Stage
 import com.autobuy.app.ui.components.AppCard
 import com.autobuy.app.ui.components.CompactField
 import com.autobuy.app.ui.components.RowDivider
@@ -79,8 +81,10 @@ fun SeckillScreen() {
     val uriHandler = LocalUriHandler.current
     val logs by LogBus.logs.collectAsState()
     val running by LogBus.running.collectAsState()
+    val stage by LogBus.stage.collectAsState()
 
     var a11yEnabled by remember { mutableStateOf(Permissions.isAccessibilityEnabled(context)) }
+    var overlayEnabled by remember { mutableStateOf(Permissions.canDrawOverlays(context)) }
     var platform by remember { mutableStateOf(Platform.TAOBAO) }
     var targetText by remember { mutableStateOf(defaultTargetText()) }
     var keyword by remember { mutableStateOf("") }
@@ -90,6 +94,7 @@ fun SeckillScreen() {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 a11yEnabled = Permissions.isAccessibilityEnabled(context)
+                overlayEnabled = Permissions.canDrawOverlays(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -156,10 +161,13 @@ fun SeckillScreen() {
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
-                // ===== 无障碍状态 =====
-                AccessibilityCard(enabled = a11yEnabled) {
-                    Permissions.openAccessibilitySettings(context)
-                }
+                // ===== 准备状态 =====
+                SetupCard(
+                    a11yEnabled = a11yEnabled,
+                    overlayEnabled = overlayEnabled,
+                    onOpenA11y = { Permissions.openAccessibilitySettings(context) },
+                    onOpenOverlay = { Permissions.requestOverlay(context) }
+                )
 
                 // ===== 抢购配置 =====
                 SectionTitle("抢购配置")
@@ -201,6 +209,10 @@ fun SeckillScreen() {
                         placeholder = "用于日志与校验"
                     )
                 }
+
+                // ===== 抢购流程 =====
+                SectionTitle("抢购流程")
+                FlowCard(current = stage)
 
                 // ===== 操作 =====
                 Button(
@@ -307,34 +319,108 @@ fun SeckillScreen() {
 }
 
 @Composable
-private fun AccessibilityCard(enabled: Boolean, onOpenSettings: () -> Unit) {
+private fun SetupCard(
+    a11yEnabled: Boolean,
+    overlayEnabled: Boolean,
+    onOpenA11y: () -> Unit,
+    onOpenOverlay: () -> Unit
+) {
     AppCard {
-        Row(
+        StatusRow(
+            ok = a11yEnabled,
+            title = "无障碍服务",
+            desc = if (a11yEnabled) "已开启，可自动操作淘宝 App" else "抢购必需，请在系统设置中开启",
+            actionText = "去开启",
+            onAction = onOpenA11y
+        )
+        RowDivider()
+        StatusRow(
+            ok = overlayEnabled,
+            title = "悬浮指引",
+            desc = if (overlayEnabled) "已授权，抢购时在淘宝上显示当前阶段" else "可选，便于随时看到进度",
+            actionText = "去授权",
+            onAction = onOpenOverlay
+        )
+    }
+}
+
+@Composable
+private fun StatusRow(
+    ok: Boolean,
+    title: String,
+    desc: String,
+    actionText: String,
+    onAction: () -> Unit
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = if (ok) Icons.Filled.CheckCircle else Icons.Filled.Warning,
+            contentDescription = null,
+            tint = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+            modifier = Modifier.size(22.dp)
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(
+                desc,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (!ok) {
+            TextButton(onClick = onAction) { Text(actionText) }
+        }
+    }
+}
+
+@Composable
+private fun FlowCard(current: Stage) {
+    AppCard {
+        Column(
             Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Icon(
-                imageVector = if (enabled) Icons.Filled.CheckCircle else Icons.Filled.Warning,
-                contentDescription = null,
-                tint = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                modifier = Modifier.size(22.dp)
-            )
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    if (enabled) "无障碍服务已开启" else "无障碍服务未开启",
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Text(
-                    if (enabled) "可以开始抢购" else "需在系统设置中开启 AutoBuy 抢购服务",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            if (!enabled) {
-                TextButton(onClick = onOpenSettings) { Text("去开启") }
+            Stage.entries.filter { it != Stage.IDLE }.forEach { s ->
+                val active = s == current
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(
+                        Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (active) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.outlineVariant
+                            )
+                    )
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            s.label,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (active) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            }
+                        )
+                        Text(
+                            s.tip,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
         }
     }

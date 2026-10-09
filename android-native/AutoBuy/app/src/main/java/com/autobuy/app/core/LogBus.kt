@@ -1,5 +1,6 @@
 package com.autobuy.app.core
 
+import com.autobuy.app.seckill.Stage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.text.SimpleDateFormat
@@ -15,6 +16,9 @@ object LogBus {
     private val _running = MutableStateFlow(false)
     val running = _running.asStateFlow()
 
+    private val _stage = MutableStateFlow(Stage.IDLE)
+    val stage = _stage.asStateFlow()
+
     private val fmt = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
 
     fun add(message: String) {
@@ -29,5 +33,9 @@ object LogBus {
 
     fun setRunning(value: Boolean) {
         _running.value = value
+    }
+
+    fun setStage(value: Stage) {
+        _stage.value = value
     }
 }

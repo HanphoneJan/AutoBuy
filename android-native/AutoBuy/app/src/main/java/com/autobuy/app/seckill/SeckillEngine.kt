@@ -15,67 +15,142 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * 抢购引擎：校准网络时间 → 等到目标时间 → 执行平台流程。
- * 淘宝流程（已在真机验证）：
- *   1. 图像识别勾选购物车第一个未选中的商品
- *   2. 颜色识别点击「结算」
- *   3. content-desc 点击「立即支付」
+ * 抢购引擎（移动端流程，区别于网页端）：
+ *
+ *  准备  校准网络时间，等到 T-navigateLead 开始就位
+ *  就位  自动切到购物车 → 图像识别勾选目标商品 → 颜色识别点「结算」→ 进入确认订单页
+ *  刷新  在确认订单页用「号码保护」开关以轻柔节奏刷新订单状态（非网页端的高频连点）
+ *  提交  到点自动点击「立即支付 / 提交订单」
+ *
+ * 每一步都通过 [LogBus] 的 Stage/日志给出明确指引。
  */
 class SeckillEngine(private val context: Context) {
 
     private val checkboxRegion = floatArrayOf(0.02f, 0.10f, 0.12f, 0.85f)
     private val settleRegion = floatArrayOf(0.60f, 0.85f, 1.0f, 0.95f)
     private val orange = Color.rgb(0xFF, 0x6A, 0x00)
+    private val taobaoPkg = "com.taobao.taobao"
+    private val privacyKeywords = listOf("号码保护", "隐私号码", "隐私保护")
+    private val submitKeywords = listOf("立即支付", "提交订单", "提交订单并付款")
 
     suspend fun run(config: SeckillConfig) {
         val a11y = AutoBuyAccessibilityService.instance
         if (a11y == null) {
             LogBus.add("无障碍服务未开启，请先在设置中开启 AutoBuy 抢购服务")
+            LogBus.setStage(Stage.IDLE)
             return
         }
 
+        LogBus.setStage(Stage.PREPARE)
         LogBus.add("网络时间校准中...")
         val offset = TimeSync.calibrateOffset()
         LogBus.add(if (offset != 0L) "网络时间校准成功，偏移 ${offset}ms" else "网络时间校准失败，使用本机时间")
-
         fun now() = System.currentTimeMillis() + offset
 
-        val start = config.targetTimeMs - config.leadSeconds * 1000L
         LogBus.add("目标时间：${format(config.targetTimeMs)}")
-        while (now() < start) {
-            val remain = start - now()
+        val navStart = config.targetTimeMs - config.navigateLeadSeconds * 1000L
+        while (now() < navStart) {
+            val remain = navStart - now()
             if (remain > 10_000) {
-                LogBus.add("距抢购还有 ${remain / 1000}s")
+                LogBus.add("距开始就位还有 ${remain / 1000}s")
                 delay(5000)
             } else {
                 delay(50)
             }
         }
-        LogBus.add("进入抢购窗口")
 
-        val deadline = config.targetTimeMs + config.windowSeconds * 1000L
-        when (config.platform) {
-            Platform.TAOBAO -> runTaobao(a11y, deadline)
-            Platform.JD -> LogBus.add("京东流程尚未实现")
+        LogBus.setStage(Stage.NAVIGATE)
+        if (!navigateToConfirm(a11y)) {
+            LogBus.add("自动就位未完成，请确认淘宝已登录、购物车已打开")
+        }
+
+        LogBus.setStage(Stage.REFRESH)
+        refreshUntilTarget(a11y, config, ::now)
+
+        LogBus.setStage(Stage.SUBMIT)
+        val ok = a11y.clickByTextOrDesc(submitKeywords, contains = true, timeoutMs = 4000)
+        if (ok) {
+            LogBus.add("已点击提交，请尽快确认付款")
+            LogBus.setStage(Stage.DONE)
+        } else {
+            LogBus.add("未找到提交按钮，请手动检查")
+            LogBus.setStage(Stage.VERIFY)
         }
     }
 
-    private suspend fun runTaobao(a11y: AutoBuyAccessibilityService, deadline: Long) {
-        if (stepTemplate(a11y, "templates/taobao_cart_checkbox.png", checkboxRegion, 0.8f, true, deadline, "勾选第一个商品")) {
-            delay(900)
-        } else {
-            LogBus.add("未找到商品复选框（请确认淘宝购物车已打开）")
+    /** 自动就位：切到购物车 → 选商品 → 结算 → 确认订单页。 */
+    private suspend fun navigateToConfirm(a11y: AutoBuyAccessibilityService): Boolean {
+        if (a11y.hasDesc(submitKeywords, contains = true)) {
+            LogBus.add("已在确认订单页，跳过就位")
+            return true
         }
 
-        if (stepSettle(a11y, deadline)) {
-            delay(2500)
-        } else {
-            LogBus.add("未找到「结算」按钮，终止")
+        var waited = 0
+        while (a11y.currentPackage() != taobaoPkg && waited < 15) {
+            if (waited == 0) LogBus.add("请切换到淘宝 App 并停留在购物车页...")
+            delay(1000)
+            waited++
+        }
+        if (a11y.currentPackage() != taobaoPkg) {
+            LogBus.add("未检测到淘宝在前台，跳过自动就位")
+            return false
+        }
+
+        // 打开购物车（无障碍文字）
+        a11y.clickByText(listOf("购物车"), contains = false, timeoutMs = 1500)
+        delay(1500)
+
+        // 勾选第一个未选中的商品（图像识别，取最上方）
+        stepTemplate(
+            a11y,
+            "templates/taobao_cart_checkbox.png",
+            checkboxRegion,
+            0.85f,
+            topmost = true,
+            deadline = System.currentTimeMillis() + 6000,
+            label = "勾选第一个商品"
+        )
+        delay(700)
+
+        // 点击「结算」（颜色识别纯色按钮）
+        val settled = stepSettle(a11y, System.currentTimeMillis() + 6000)
+        if (!settled) {
+            LogBus.add("未找到「结算」按钮")
+            return false
+        }
+        delay(2500)
+
+        // 等待确认订单页出现
+        var w = 0
+        while (!a11y.hasDesc(listOf("立即支付"), contains = true) && w < 8) {
+            delay(500)
+            w++
+        }
+        return true
+    }
+
+    /** 在确认订单页用「号码保护」开关刷新，直到目标时间。 */
+    private suspend fun refreshUntilTarget(
+        a11y: AutoBuyAccessibilityService,
+        config: SeckillConfig,
+        now: () -> Long
+    ) {
+        val hasPrivacy = a11y.hasDesc(privacyKeywords, contains = true) ||
+            a11y.hasText(privacyKeywords, contains = true)
+        if (!hasPrivacy) {
+            LogBus.add("未发现「号码保护」开关，跳过刷新（到点直接提交）")
+            while (now() < config.targetTimeMs) delay(50)
             return
         }
-
-        val ok = a11y.clickByDesc(listOf("立即支付"), contains = true, timeoutMs = 3000)
-        LogBus.add(if (ok) "已点击「立即支付」，请尽快确认付款" else "未找到「立即支付」，请手动检查")
+        LogBus.add("开始用「号码保护」刷新订单状态（间隔 ${config.refreshIntervalMs}ms）")
+        var count = 0
+        while (now() < config.targetTimeMs) {
+            a11y.toggleByTextOrDesc(privacyKeywords, timeoutMs = 300)
+            count++
+            if (count % 3 == 0) LogBus.add("刷新中（已 $count 次）")
+            delay(config.refreshIntervalMs)
+        }
+        LogBus.add("刷新结束，准备提交")
     }
 
     private suspend fun stepTemplate(

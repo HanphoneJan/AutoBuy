@@ -73,9 +73,71 @@ class AutoBuyAccessibilityService : AccessibilityService() {
         return false
     }
 
+    /** 当前前台应用包名。 */
+    fun currentPackage(): String? = try {
+        rootInActiveWindow?.packageName?.toString()
+    } catch (_: Exception) {
+        null
+    }
+
+    /** 是否存在匹配的文字。 */
+    fun hasText(values: List<String>, contains: Boolean = false): Boolean =
+        findNode { n ->
+            val t = n.text?.toString() ?: return@findNode false
+            values.any { if (contains) t.contains(it) else t == it }
+        } != null
+
+    /** 是否存在匹配的 contentDescription。 */
+    fun hasDesc(values: List<String>, contains: Boolean = true): Boolean =
+        findNode { n ->
+            val d = n.contentDescription?.toString() ?: return@findNode false
+            values.any { if (contains) d.contains(it) else d == it }
+        } != null
+
+    /** 按文字或描述点击（合并匹配，兼容「提交订单 / 立即支付」等不同文案）。 */
+    fun clickByTextOrDesc(values: List<String>, contains: Boolean = true, timeoutMs: Long = 800): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() <= deadline) {
+            val node = findNode { n ->
+                val t = n.text?.toString().orEmpty()
+                val d = n.contentDescription?.toString().orEmpty()
+                values.any { v -> if (contains) t.contains(v) || d.contains(v) else t == v || d == v }
+            }
+            if (node != null && clickNode(node)) return true
+            sleepQuietly(80)
+        }
+        return false
+    }
+
+    /** 按文字/描述找到开关并切换（用于「号码保护」刷新订单状态）。 */
+    fun toggleByTextOrDesc(keywords: List<String>, timeoutMs: Long = 800): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() <= deadline) {
+            val node = findNode { n ->
+                val t = n.text?.toString().orEmpty()
+                val d = n.contentDescription?.toString().orEmpty()
+                keywords.any { t.contains(it) || d.contains(it) }
+            }
+            if (node != null) {
+                var n: AccessibilityNodeInfo? = node
+                var guard = 0
+                while (n != null && guard < 6) {
+                    if (n.isCheckable && n.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
+                    if (n.isClickable && n.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
+                    n = n.parent
+                    guard++
+                }
+                val rect = Rect()
+                node.getBoundsInScreen(rect)
+                if (!rect.isEmpty) return tap(rect.exactCenterX(), rect.exactCenterY())
+            }
+            sleepQuietly(80)
+        }
+        return false
+    }
+
     /** 在坐标处派发点击手势。 */
-    fun tap(x: Float, y: Float): Boolean {
-        val path = Path().apply { moveTo(x, y) }
+    fun tap(x: Float, y: Float): Boolean {        val path = Path().apply { moveTo(x, y) }
         val gesture = GestureDescription.Builder()
             .addStroke(GestureDescription.StrokeDescription(path, 0, 40))
             .build()
