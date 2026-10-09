@@ -55,6 +55,21 @@ if (!targetMs) {
 
 if (cfg.keyword) log.log("目标商品关键词：" + cfg.keyword);
 
+// 图像识别步骤需要屏幕截图权限（Android 14+ 每次运行需用户确认一次）
+var needsCapture = false;
+var steps = cfg.steps || [];
+for (var i = 0; i < steps.length; i++) {
+    if (steps[i].action === "image") { needsCapture = true; break; }
+}
+if (needsCapture) {
+    log.log("请求屏幕截图权限...");
+    if (!requestScreenCapture()) {
+        log.log("未获得屏幕截图权限，无法执行图像识别步骤");
+        exit();
+    }
+    log.log("屏幕截图权限已就绪");
+}
+
 flow.waitUntil(targetMs, cfg.lead_seconds || 3);
 
 var deadline = targetMs + (cfg.window_seconds || 20) * 1000;

@@ -10,7 +10,7 @@
 var win = null;
 var label = null;
 var lines = [];
-var MAX_LINES = 12;
+var MAX_LINES = 6;
 
 function pad(n) { return n < 10 ? "0" + n : "" + n; }
 
@@ -24,10 +24,12 @@ function ensureWindow() {
     try {
         win = floaty.window(
             <frame gravity="start" bg="#cc000000" padding="8">
-                <text id="log" text="" textColor="#ffffff" textSize="12sp" maxLines="12" />
+                <text id="log" text="" textColor="#ffffff" textSize="12sp" maxLines="6" />
             </frame>
         );
-        win.setPosition(20, 320);
+        win.setPosition(0, 0);
+        // 不拦截触摸：悬浮窗若可触摸会挡住 App 上的点击坐标
+        try { win.setTouchable(false); } catch (e) {}
         label = win.log;
         return true;
     } catch (e) {
@@ -43,7 +45,15 @@ function log(msg) {
     console.log(line);
     if (ensureWindow() && label) {
         var text = lines.join("\n");
-        ui.run(function () { label.setText(text); });
+        try {
+            if (typeof ui !== "undefined" && ui && typeof ui.run === "function") {
+                ui.run(function () { label.setText(text); });
+            } else {
+                label.setText(text);
+            }
+        } catch (e) {
+            try { label.setText(text); } catch (e2) {}
+        }
     }
 }
 
