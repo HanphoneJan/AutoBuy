@@ -29,18 +29,20 @@ class TaskManager:
         self.tasks = {}
         self.task_counter = 0
 
-    def create_task(self, platform, target_time=None):
+    def create_task(self, platform, target_time=None, product_keyword=None):
         self.task_counter += 1
         task_id = f"task_{self.task_counter}"
         self.tasks[task_id] = {
             'id': task_id,
             'platform': platform,
             'status': 'pending',
-            'logs': deque(maxlen=100),
+            'logs': deque(maxlen=1000),
+            'log_seq': 0,
             'driver': None,
             'running': False,
             'thread': None,
-            'target_time': target_time
+            'target_time': target_time,
+            'product_keyword': product_keyword
         }
         return task_id
 
@@ -49,6 +51,7 @@ class TaskManager:
 
     def add_log(self, task_id, message):
         if task_id in self.tasks:
+            self.tasks[task_id]['log_seq'] += 1
             # 如果消息已包含网络时间戳，提取并使用它；否则使用本地时间作为后备
             import re
             network_time_match = re.match(r'^\[(\d{2}:\d{2}:\d{2})\]\s*', message)
@@ -57,6 +60,7 @@ class TaskManager:
             else:
                 timestamp = datetime.now().strftime('%H:%M:%S')
             self.tasks[task_id]['logs'].append({
+                'seq': self.tasks[task_id]['log_seq'],
                 'time': timestamp,
                 'message': message
             })
@@ -80,7 +84,13 @@ task_manager = TaskManager()
 
 
 # 统一抢购逻辑
-def run_seckill_task(task_id, platform, target_time=None, login_wait=15):
+def run_seckill_task(
+    task_id,
+    platform,
+    target_time=None,
+    login_wait=15,
+    product_keyword=None
+):
     """
     统一抢购任务
     :param task_id: 任务ID
@@ -101,16 +111,21 @@ def run_seckill_task(task_id, platform, target_time=None, login_wait=15):
 
     worker = None
     try:
-        worker = SeckillWorker(platform, log_callback=log_callback)
+        worker = SeckillWorker(
+            platform,
+            log_callback=log_callback,
+            product_keyword=product_keyword
+        )
         task['worker'] = worker
         # 启用登录和购物车确认
-        worker.start_seckill(
+        success = worker.start_seckill(
             target_time=target_time,
             login_wait=login_wait,
             wait_for_login_confirm=True,
             wait_for_cart_confirm=True
         )
-        task['status'] = 'success'
+        if task['status'] != 'stopped':
+            task['status'] = 'success' if success else 'failed'
     except Exception as e:
         task_manager.add_log(task_id, f"错误：{str(e)}")
         task['status'] = 'error'
@@ -169,12 +184,16 @@ def download_driver():
 def start_jd():
     data = request.json
     target_time = data.get('target_time')
+    product_keyword = (data.get('product_keyword') or '').strip()
 
     if not target_time:
         return jsonify({'error': '请设置抢购时间'}), 400
 
-    task_id = task_manager.create_task('jd', target_time)
-    thread = threading.Thread(target=run_seckill_task, args=(task_id, 'jd', target_time, 25))
+    task_id = task_manager.create_task('jd', target_time, product_keyword)
+    thread = threading.Thread(
+        target=run_seckill_task,
+        args=(task_id, 'jd', target_time, 25, product_keyword)
+    )
     thread.daemon = True
     thread.start()
 
@@ -236,6 +255,7 @@ def get_task_status(task_id):
         'status': task['status'],
         'running': task['running'],
         'target_time': task.get('target_time'),
+        'product_keyword': task.get('product_keyword'),
         'logs': list(task['logs'])
     })
 
@@ -274,8 +294,10 @@ def close_browser(task_id):
 
 @app.route('/api/tasks/<task_id>/logs')
 def stream_logs(task_id):
+    last_event_id = int(request.headers.get('Last-Event-ID', '0') or 0)
+
     def generate():
-        last_log_count = 0
+        last_seq = last_event_id
         while True:
             task = task_manager.get_task(task_id)
             if not task:
@@ -283,10 +305,17 @@ def stream_logs(task_id):
                 break
 
             logs = list(task['logs'])
-            if len(logs) > last_log_count:
-                for log in logs[last_log_count:]:
-                    yield f"data: {json.dumps(log)}\n\n"
-                last_log_count = len(logs)
+            new_logs = [
+                log for log in logs
+                if log.get('seq', 0) > last_seq
+            ]
+            if new_logs:
+                for log in new_logs:
+                    yield (
+                        f"id: {log.get('seq', 0)}\n"
+                        f"data: {json.dumps(log)}\n\n"
+                    )
+                last_seq = new_logs[-1].get('seq', last_seq)
 
             if not task['running'] and task['status'] in ['success', 'failed', 'error', 'stopped']:
                 break
@@ -297,4 +326,5 @@ def stream_logs(task_id):
 
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    port = int(os.environ.get('PORT', '5000'))
+    app.run(debug=False, host='127.0.0.1', port=port, threaded=True, use_reloader=False)

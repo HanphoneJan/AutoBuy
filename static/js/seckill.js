@@ -1,6 +1,19 @@
 let currentTaskId = null;
 let eventSource = null;
 let currentPlatform = 'jd';
+const seenLogKeys = new Set();
+
+function getLogKey(log) {
+    if (log.seq) return `seq:${log.seq}`;
+    return `${log.time || ''}|${log.message || ''}`;
+}
+
+function appendLogIfNew(log) {
+    const key = getLogKey(log);
+    if (seenLogKeys.has(key)) return;
+    seenLogKeys.add(key);
+    addLog(log.message, log.time);
+}
 
 // 确保驱动已下载（带重试机制）
 async function ensureDriver() {
@@ -102,6 +115,9 @@ async function startTask() {
         if (!targetTime) {
             return;
         }
+        const productKeyword = (
+            document.getElementById('jdProductKeyword')?.value || ''
+        ).trim();
 
         try {
             const response = await fetch('/api/jd/start', {
@@ -109,13 +125,19 @@ async function startTask() {
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ target_time: targetTime })
+                body: JSON.stringify({
+                    target_time: targetTime,
+                    product_keyword: productKeyword
+                })
             });
 
             const data = await response.json();
 
             if (response.ok) {
                 currentTaskId = data.task_id;
+                sessionStorage.setItem('autobuyTaskId', currentTaskId);
+                sessionStorage.setItem('autobuyPlatform', currentPlatform);
+                sessionStorage.setItem('autobuyJdProductKeyword', productKeyword);
                 document.getElementById('startBtn').disabled = true;
                 document.getElementById('stopBtn').disabled = false;
                 disableTimeInputs(true);
@@ -148,6 +170,8 @@ async function startTask() {
 
             if (response.ok) {
                 currentTaskId = data.task_id;
+                sessionStorage.setItem('autobuyTaskId', currentTaskId);
+                sessionStorage.setItem('autobuyPlatform', currentPlatform);
                 document.getElementById('startBtn').disabled = true;
                 document.getElementById('stopBtn').disabled = false;
                 disableTimeInputs(true);
@@ -230,6 +254,7 @@ async function resetTask() {
 }
 
 function clearLogs() {
+    seenLogKeys.clear();
     const logContainer = document.getElementById('logContainer');
     if (logContainer) {
         logContainer.innerHTML = '<div class="log-entry"><span class="log-time">--:--:--</span>等待开始...</div>';
@@ -246,7 +271,7 @@ function startLogStream() {
     eventSource.onmessage = function(event) {
         try {
             const log = JSON.parse(event.data);
-            addLog(log.message, log.time);
+            appendLogIfNew(log);
 
             // 根据日志内容更新步骤和确认按钮状态
             // 步骤1: 初始化浏览器
@@ -318,8 +343,8 @@ function startLogStream() {
     };
 
     eventSource.onerror = function() {
-        eventSource.close();
-        eventSource = null;
+        // EventSource 会自动重连；不要在短暂断线时永久关闭日志流。
+        console.warn('日志连接暂时中断，正在自动重连...');
     };
 }
 
@@ -403,7 +428,14 @@ function updateSteps(currentStep) {
 }
 
 function disableTimeInputs(disabled) {
-    const inputs = ['targetDate', 'targetHour', 'targetMinute', 'targetSecond', 'targetMicrosecond'];
+    const inputs = [
+        'targetDate',
+        'targetHour',
+        'targetMinute',
+        'targetSecond',
+        'targetMicrosecond',
+        'jdProductKeyword'
+    ];
     inputs.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.disabled = disabled;
@@ -444,6 +476,82 @@ function resetUI() {
     }
 
     currentTaskId = null;
+    sessionStorage.removeItem('autobuyTaskId');
+    sessionStorage.removeItem('autobuyPlatform');
+    sessionStorage.removeItem('autobuyJdProductKeyword');
+}
+
+async function restoreTask() {
+    let savedTaskId = sessionStorage.getItem('autobuyTaskId');
+    let savedPlatform = sessionStorage.getItem('autobuyPlatform');
+
+    if (!savedTaskId) {
+        const candidates = await Promise.all(
+            Array.from({ length: 20 }, async (_, index) => {
+                const taskId = `task_${index + 1}`;
+                try {
+                    const response = await fetch(`/api/tasks/${taskId}/status`);
+                    if (!response.ok) return null;
+                    const data = await response.json();
+                    return data.running ? data : null;
+                } catch {
+                    return null;
+                }
+            })
+        );
+        const runningTasks = candidates.filter(Boolean);
+        if (!runningTasks.length) return;
+        const discovered = runningTasks[runningTasks.length - 1];
+        savedTaskId = discovered.id;
+        savedPlatform = discovered.platform;
+        sessionStorage.setItem('autobuyTaskId', savedTaskId);
+        sessionStorage.setItem('autobuyPlatform', savedPlatform);
+    }
+
+    try {
+        const response = await fetch(`/api/tasks/${savedTaskId}/status`);
+        if (!response.ok) {
+            sessionStorage.removeItem('autobuyTaskId');
+            sessionStorage.removeItem('autobuyPlatform');
+            return;
+        }
+
+        const data = await response.json();
+        currentTaskId = savedTaskId;
+        currentPlatform = savedPlatform || data.platform;
+
+        const platformRadio = document.querySelector(
+            `input[name="platform"][value="${currentPlatform}"]`
+        );
+        if (platformRadio) platformRadio.checked = true;
+        const keywordInput = document.getElementById('jdProductKeyword');
+        if (keywordInput) {
+            keywordInput.value = (
+                data.product_keyword ||
+                sessionStorage.getItem('autobuyJdProductKeyword') ||
+                ''
+            );
+        }
+
+        document.getElementById('startBtn').disabled = true;
+        document.getElementById('stopBtn').disabled = !data.running;
+        disableTimeInputs(true);
+        document.querySelectorAll('input[name="platform"]').forEach(
+            radio => radio.disabled = true
+        );
+        updatePlatform();
+        updateStatus(data.status);
+
+        clearLogs();
+        data.logs.forEach(appendLogIfNew);
+
+        if (data.running) {
+            updateSteps(3);
+            startLogStream();
+        }
+    } catch (error) {
+        console.warn('恢复任务状态失败：', error);
+    }
 }
 
 // 页面加载完成后检查驱动
@@ -459,12 +567,21 @@ setInterval(async () => {
         try {
             const response = await fetch(`/api/tasks/${currentTaskId}/status`);
             const data = await response.json();
+            if (Array.isArray(data.logs)) {
+                data.logs.forEach(appendLogIfNew);
+            }
 
             if (data.status && data.status !== 'running') {
                 updateStatus(data.status);
+                if (eventSource) {
+                    eventSource.close();
+                    eventSource = null;
+                }
             }
         } catch (error) {
             console.error('检查状态失败：', error);
         }
     }
 }, 2000);
+
+window.addEventListener('load', restoreTask);
