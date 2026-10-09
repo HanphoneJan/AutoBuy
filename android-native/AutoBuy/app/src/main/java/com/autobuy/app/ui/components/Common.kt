@@ -49,6 +49,29 @@ fun SectionTitle(text: String, modifier: Modifier = Modifier) {
     )
 }
 
+/** 页面标题栏（各 Tab 顶部，替代 M3 TopAppBar） */
+@Composable
+fun ScreenHeader(
+    title: String,
+    modifier: Modifier = Modifier,
+    trailing: @Composable () -> Unit = {}
+) {
+    Row(
+        modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.weight(1f)
+        )
+        trailing()
+    }
+}
+
 /** 分组卡片：surface 底 + 1dp 投影 + 12dp 圆角 */
 @Composable
 fun AppCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
