@@ -18,20 +18,27 @@ import java.util.Locale
  * 抢购引擎（移动端流程，区别于网页端）：
  *
  *  准备  校准网络时间，等到 T-navigateLead 开始就位
- *  就位  自动切到购物车 → 图像识别勾选目标商品 → 颜色识别点「结算」→ 进入确认订单页
- *  刷新  在确认订单页用「号码保护」开关以轻柔节奏刷新订单状态（非网页端的高频连点）
- *  提交  到点自动点击「立即支付 / 提交订单」
+ *  就位  自动切到购物车 → 图像识别勾选目标商品 → 点「结算/去结算」→ 进入确认订单页
+ *  刷新  在确认订单页用「号码保护」开关刷新订单状态（低频可控）
+ *  提交  到点快速点击「提交订单 / 立即支付」；若未开售则重进结算页刷新
  *
- * 每一步都通过 [LogBus] 的 Stage/日志给出明确指引。
+ * 淘宝：购物车/确认页为 Weex，用图像识别；提交按钮用 content-desc。
+ * 京东：购物车为自绘视图，用图像识别；确认页（普通订单）有「号码保护」开关。
  */
 class SeckillEngine(private val context: Context) {
 
-    private val checkboxRegion = floatArrayOf(0.035f, 0.12f, 0.10f, 0.85f)
-    private val settleRegion = floatArrayOf(0.60f, 0.85f, 1.0f, 0.95f)
-    private val orange = Color.rgb(0xFF, 0x6A, 0x00)
     private val taobaoPkg = "com.taobao.taobao"
+    private val jdPkg = "com.jingdong.app.mall"
+
+    // 淘宝「结算」为橙色；京东「去结算」为红色
+    private val taobaoSettleColor = Color.rgb(0xFF, 0x6A, 0x00)
+    private val jdSettleColor = Color.rgb(0xE1, 0x25, 0x1B)
+
+    private val settleRegion = floatArrayOf(0.55f, 0.82f, 1.0f, 0.97f)
+    private val checkboxRegion = floatArrayOf(0.035f, 0.10f, 0.10f, 0.88f)
+
     private val privacyKeywords = listOf("号码保护", "隐私号码", "隐私保护")
-    private val submitKeywords = listOf("立即支付", "提交订单", "提交订单并付款")
+    private val submitKeywords = listOf("立即支付", "提交订单")
 
     suspend fun run(config: SeckillConfig) {
         val a11y = AutoBuyAccessibilityService.instance
@@ -59,74 +66,122 @@ class SeckillEngine(private val context: Context) {
             }
         }
 
+        val pkg: String
+        val checkboxTemplate: String
+        val settleText: List<String>
+        val settleColor: Int
+        when (config.platform) {
+            Platform.TAOBAO -> {
+                pkg = taobaoPkg
+                checkboxTemplate = "templates/taobao_cart_checkbox.png"
+                settleText = listOf("结算")
+                settleColor = taobaoSettleColor
+            }
+            Platform.JD -> {
+                pkg = jdPkg
+                checkboxTemplate = "templates/jd_cart_checkbox.png"
+                settleText = listOf("去结算", "结算")
+                settleColor = jdSettleColor
+            }
+        }
+
         LogBus.setStage(Stage.NAVIGATE)
-        if (!navigateToConfirm(a11y)) {
-            LogBus.add("自动就位未完成，请确认淘宝已登录、购物车已打开")
+        if (!navigateToConfirm(a11y, pkg, checkboxTemplate, settleText, settleColor)) {
+            LogBus.add("自动就位未完成，请确认 App 已登录、购物车已打开")
         }
 
         LogBus.setStage(Stage.REFRESH)
         refreshUntilTarget(a11y, config, ::now)
 
         LogBus.setStage(Stage.SUBMIT)
-        val ok = a11y.clickByTextOrDesc(submitKeywords, contains = true, timeoutMs = 4000)
-        if (ok) {
-            LogBus.add("已点击提交，请尽快确认付款")
+        if (submitWithRetry(a11y, config, ::now)) {
+            LogBus.add("已提交，请尽快确认付款")
             LogBus.setStage(Stage.DONE)
         } else {
-            LogBus.add("未找到提交按钮，请手动检查")
+            LogBus.add("未能确认提交，请手动检查")
             LogBus.setStage(Stage.VERIFY)
         }
     }
 
     /** 自动就位：切到购物车 → 选商品 → 结算 → 确认订单页。 */
-    private suspend fun navigateToConfirm(a11y: AutoBuyAccessibilityService): Boolean {
+    private suspend fun navigateToConfirm(
+        a11y: AutoBuyAccessibilityService,
+        pkg: String,
+        checkboxTemplate: String,
+        settleText: List<String>,
+        settleColor: Int
+    ): Boolean {
         if (a11y.hasDesc(submitKeywords, contains = true)) {
             LogBus.add("已在确认订单页，跳过就位")
             return true
         }
 
         var waited = 0
-        while (a11y.currentPackage() != taobaoPkg && waited < 15) {
-            if (waited == 0) LogBus.add("请切换到淘宝 App 并停留在购物车页...")
+        while (a11y.currentPackage() != pkg && waited < 15) {
+            if (waited == 0) LogBus.add("请切换到目标 App 并停留在购物车页（当前：${a11y.currentPackage() ?: "未知"}）...")
             delay(1000)
             waited++
         }
-        if (a11y.currentPackage() != taobaoPkg) {
-            LogBus.add("未检测到淘宝在前台，跳过自动就位")
+        if (a11y.currentPackage() != pkg) {
+            LogBus.add("目标 App 不在前台，跳过自动就位")
             return false
         }
 
-        // 打开购物车（无障碍文字）
-        a11y.clickByText(listOf("购物车"), contains = false, timeoutMs = 1500)
+        // 打开购物车（底部 Tab：淘宝文字、京东 content-desc「购物车N」）
+        a11y.clickByTextOrDesc(listOf("购物车"), contains = true, timeoutMs = 1500)
         delay(1500)
 
-        // 勾选第一个未选中的商品（图像识别，取最上方）
+        // 勾选第一个未选中的商品（图像识别 + 环形校验，取最上方）
         stepTemplate(
             a11y,
-            "templates/taobao_cart_checkbox.png",
+            checkboxTemplate,
             checkboxRegion,
-            0.88f,
+            0.86f,
             topmost = true,
             deadline = System.currentTimeMillis() + 6000,
             label = "勾选第一个商品"
         )
         delay(700)
 
-        // 点击「结算」（颜色识别纯色按钮）
-        val settled = stepSettle(a11y, System.currentTimeMillis() + 6000)
+        // 点击「结算 / 去结算」
+        val settled = clickSettle(a11y, settleText, settleColor, System.currentTimeMillis() + 6000)
         if (!settled) {
-            LogBus.add("未找到「结算」按钮")
+            LogBus.add("未找到结算按钮")
             return false
         }
         delay(2500)
 
-        // 等待确认订单页出现
         var w = 0
-        while (!a11y.hasDesc(listOf("立即支付"), contains = true) && w < 8) {
+        while (!a11y.hasDesc(submitKeywords, contains = true) && w < 8) {
             delay(500)
             w++
         }
         return true
+    }
+
+    /** 结算按钮：先试文字（京东），再用颜色（淘宝 Weex）。 */
+    private suspend fun clickSettle(
+        a11y: AutoBuyAccessibilityService,
+        texts: List<String>,
+        color: Int,
+        deadline: Long
+    ): Boolean {
+        while (System.currentTimeMillis() < deadline) {
+            if (a11y.clickByTextOrDesc(texts, contains = true, timeoutMs = 150)) {
+                LogBus.add("点击「${texts.first()}」（文字）")
+                return true
+            }
+            val shot = screenshot(a11y) ?: return false
+            val p = ImageMatcher.findColorCentroid(shot, settleRegion, color, 70)
+            shot.recycle()
+            if (p != null) {
+                a11y.tap(p.x.toFloat(), p.y.toFloat())
+                LogBus.add("点击结算 @ ${p.x},${p.y}")
+                return true
+            }
+            delay(60)
+        }
+        return false
     }
 
     /** 在确认订单页用「号码保护」开关刷新，直到目标时间。 */
@@ -147,10 +202,46 @@ class SeckillEngine(private val context: Context) {
         while (now() < config.targetTimeMs) {
             a11y.toggleByTextOrDesc(privacyKeywords, timeoutMs = 300)
             count++
-            if (count % 3 == 0) LogBus.add("刷新中（已 $count 次）")
+            if (count % 4 == 0) LogBus.add("刷新中（已 $count 次）")
             delay(config.refreshIntervalMs)
         }
         LogBus.add("刷新结束，准备提交")
+    }
+
+    /**
+     * 到点提交：快速连点提交按钮；若商品尚未开售（预售/预约/定时开卖），
+     * 退回购物车重新进入结算页刷新后再提交，直到成功或超出窗口。
+     */
+    private suspend fun submitWithRetry(
+        a11y: AutoBuyAccessibilityService,
+        config: SeckillConfig,
+        now: () -> Long
+    ): Boolean {
+        val deadline = config.targetTimeMs + config.windowSeconds * 1000L
+        var reenter = 0
+        while (now() < deadline) {
+            if (!a11y.hasDesc(submitKeywords, contains = true)) {
+                return true
+            }
+            val notOnSale = a11y.hasDesc(
+                listOf("暂时不能购买", "未开售", "未开始", "即将开售", "立即支付￥0", "提交订单￥0"),
+                contains = true
+            )
+            if (notOnSale && reenter < 12) {
+                reenter++
+                LogBus.add("商品尚未开售，重新进入结算页刷新（第 $reenter 次）...")
+                a11y.back()
+                delay(700)
+                a11y.clickByTextOrDesc(listOf("购物车"), contains = true, timeoutMs = 800)
+                delay(700)
+                clickSettle(a11y, listOf("结算", "去结算"), taobaoSettleColor, System.currentTimeMillis() + 3000)
+                delay(1000)
+                continue
+            }
+            a11y.clickByTextOrDesc(submitKeywords, contains = true, timeoutMs = 250)
+            delay(250)
+        }
+        return !a11y.hasDesc(submitKeywords, contains = true)
     }
 
     private suspend fun stepTemplate(
@@ -177,21 +268,6 @@ class SeckillEngine(private val context: Context) {
             if (p != null) {
                 a11y.tap(p.x.toFloat(), p.y.toFloat())
                 LogBus.add("$label @ ${p.x},${p.y}")
-                return true
-            }
-            delay(60)
-        }
-        return false
-    }
-
-    private suspend fun stepSettle(a11y: AutoBuyAccessibilityService, deadline: Long): Boolean {
-        while (System.currentTimeMillis() < deadline) {
-            val shot = screenshot(a11y) ?: return false
-            val p = ImageMatcher.findColorCentroid(shot, settleRegion, orange, 70)
-            shot.recycle()
-            if (p != null) {
-                a11y.tap(p.x.toFloat(), p.y.toFloat())
-                LogBus.add("点击「结算」@ ${p.x},${p.y}")
                 return true
             }
             delay(60)

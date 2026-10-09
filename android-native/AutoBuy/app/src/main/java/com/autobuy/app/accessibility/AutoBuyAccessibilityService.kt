@@ -73,11 +73,17 @@ class AutoBuyAccessibilityService : AccessibilityService() {
         return false
     }
 
-    /** 当前前台应用包名。 */
-    fun currentPackage(): String? = try {
-        rootInActiveWindow?.packageName?.toString()
-    } catch (_: Exception) {
-        null
+    /** 当前前台应用包名（优先活动窗口，其次任一有 root 的窗口）。 */
+    fun currentPackage(): String? {
+        try {
+            rootInActiveWindow?.packageName?.toString()?.let { return it }
+        } catch (_: Exception) {
+        }
+        return try {
+            windows.mapNotNull { it.root?.packageName?.toString() }.firstOrNull()
+        } catch (_: Exception) {
+            null
+        }
     }
 
     /** 是否存在匹配的文字。 */
@@ -135,6 +141,9 @@ class AutoBuyAccessibilityService : AccessibilityService() {
         }
         return false
     }
+
+    /** 执行返回（全局动作），用于"未开售"时退回重新进入结算页。 */
+    fun back(): Boolean = performGlobalAction(GLOBAL_ACTION_BACK)
 
     /** 在坐标处派发点击手势。 */
     fun tap(x: Float, y: Float): Boolean {        val path = Path().apply { moveTo(x, y) }

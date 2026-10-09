@@ -9,8 +9,9 @@ import com.autobuy.app.accessibility.AutoBuyAccessibilityService
 
 object Permissions {
 
-    /** 判断 AutoBuy 的无障碍服务是否已在系统设置中开启。 */
+    /** 判断 AutoBuy 的无障碍服务是否已连接（服务与 UI 同进程，直接看实例最可靠）。 */
     fun isAccessibilityEnabled(context: Context): Boolean {
+        if (AutoBuyAccessibilityService.instance != null) return true
         val expected = "${context.packageName}/${AutoBuyAccessibilityService::class.java.name}"
         val enabled = Settings.Secure.getString(
             context.contentResolver,
