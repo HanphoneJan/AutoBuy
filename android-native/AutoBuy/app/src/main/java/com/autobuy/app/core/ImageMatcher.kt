@@ -19,7 +19,8 @@ object ImageMatcher {
         threshold: Float,
         topmost: Boolean,
         downscale: Int = 2,
-        step: Int = 2
+        step: Int = 2,
+        validator: ((Int, Int) -> Boolean)? = null
     ): Point? {
         val ds = downscale.coerceAtLeast(1)
         val sw = screen.width / ds
@@ -70,12 +71,21 @@ object ImageMatcher {
                     for (xx in 0 until tw) sad += abs(sGray[sBase + xx] - tGray[tBase + xx]).toLong()
                 }
                 val score = 1.0 - sad / maxSad
-                if (topmost) {
-                    if (score >= threshold && y < topY) {
-                        topY = y; topX = x
+                if (score >= threshold) {
+                    val cx = (x + tw / 2) * ds
+                    val cy = (y + th / 2) * ds
+                    if (validator == null || validator(cx, cy)) {
+                        if (topmost) {
+                            if (y < topY) {
+                                topY = y
+                                topX = x
+                            }
+                        } else if (score > bestScore) {
+                            bestScore = score
+                            bestX = x
+                            bestY = y
+                        }
                     }
-                } else if (score > bestScore) {
-                    bestScore = score; bestX = x; bestY = y
                 }
                 x += step
             }
@@ -122,6 +132,20 @@ object ImageMatcher {
         }
         if (count < minCount) return null
         return Point((sumX / count).toInt(), (sumY / count).toInt())
+    }
+
+    /** 判断 (cx,cy) 处是否是"浅底 + 灰色环"（用于排除商品图里的实心圆）。 */
+    fun isRingLike(screen: Bitmap, cx: Int, cy: Int, radius: Int): Boolean {
+        val w = screen.width
+        val h = screen.height
+        fun sample(x: Int, y: Int): Int {
+            val px = screen.getPixel(x.coerceIn(0, w - 1), y.coerceIn(0, h - 1))
+            return lum(px)
+        }
+        val center = sample(cx, cy)
+        val ring = (sample(cx - radius, cy) + sample(cx + radius, cy) +
+            sample(cx, cy - radius) + sample(cx, cy + radius)) / 4
+        return center >= 200 && ring <= center - 12
     }
 
     private fun lum(c: Int): Int {

@@ -26,7 +26,7 @@ import java.util.Locale
  */
 class SeckillEngine(private val context: Context) {
 
-    private val checkboxRegion = floatArrayOf(0.02f, 0.10f, 0.12f, 0.85f)
+    private val checkboxRegion = floatArrayOf(0.035f, 0.12f, 0.10f, 0.85f)
     private val settleRegion = floatArrayOf(0.60f, 0.85f, 1.0f, 0.95f)
     private val orange = Color.rgb(0xFF, 0x6A, 0x00)
     private val taobaoPkg = "com.taobao.taobao"
@@ -105,7 +105,7 @@ class SeckillEngine(private val context: Context) {
             a11y,
             "templates/taobao_cart_checkbox.png",
             checkboxRegion,
-            0.85f,
+            0.88f,
             topmost = true,
             deadline = System.currentTimeMillis() + 6000,
             label = "勾选第一个商品"
@@ -169,7 +169,10 @@ class SeckillEngine(private val context: Context) {
         }
         while (System.currentTimeMillis() < deadline) {
             val shot = screenshot(a11y) ?: return false
-            val p = ImageMatcher.findTemplate(shot, tmpl, region, threshold, topmost)
+            val radius = (tmpl.width * 38 / 100).coerceAtLeast(6)
+            val p = ImageMatcher.findTemplate(shot, tmpl, region, threshold, topmost) { cx, cy ->
+                ImageMatcher.isRingLike(shot, cx, cy, radius)
+            }
             shot.recycle()
             if (p != null) {
                 a11y.tap(p.x.toFloat(), p.y.toFloat())
