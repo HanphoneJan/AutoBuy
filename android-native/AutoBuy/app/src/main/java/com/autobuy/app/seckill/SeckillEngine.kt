@@ -192,12 +192,12 @@ class SeckillEngine(private val context: Context) {
             while (now() < config.targetTimeMs) delay(50)
             return
         }
-        LogBus.add("开始用「号码保护」刷新订单状态（间隔 ${config.refreshIntervalMs}ms）")
+        LogBus.add("开始用「号码保护」刷新订单状态（间隔 ${config.refreshIntervalMs}ms，略快于手动）")
         var count = 0
         while (now() < config.targetTimeMs) {
-            a11y.toggleByTextOrDesc(privacyKeywords, timeoutMs = 300)
+            a11y.toggleByTextOrDesc(privacyKeywords, timeoutMs = 150)
             count++
-            if (count % 4 == 0) LogBus.add("刷新中（已 $count 次）")
+            if (count % 8 == 0) LogBus.add("刷新中（已 $count 次）")
             delay(config.refreshIntervalMs)
         }
         LogBus.add("刷新结束，准备提交")
@@ -235,15 +235,15 @@ class SeckillEngine(private val context: Context) {
                 reenter++
                 LogBus.add("商品尚未开售，重新进入结算页刷新（第 $reenter 次）...")
                 a11y.back()
-                delay(700)
-                a11y.clickByTextOrDesc(listOf("购物车"), contains = true, timeoutMs = 800)
-                delay(700)
-                clickSettle(a11y, settleText, settleColor, System.currentTimeMillis() + 3000)
-                delay(1000)
+                delay(500)
+                a11y.clickByTextOrDesc(listOf("购物车"), contains = true, timeoutMs = 600)
+                delay(500)
+                clickSettle(a11y, settleText, settleColor, System.currentTimeMillis() + 2000)
+                delay(600)
                 continue
             }
-            a11y.clickByTextOrDesc(submitKeywords, contains = true, timeoutMs = 250)
-            delay(250)
+            a11y.clickByTextOrDesc(submitKeywords, contains = true, timeoutMs = 150)
+            delay(150)
         }
         return reachedConfirm && !a11y.hasDesc(submitKeywords, contains = true)
     }

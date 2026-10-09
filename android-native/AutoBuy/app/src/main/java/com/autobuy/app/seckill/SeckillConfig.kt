@@ -13,8 +13,8 @@ data class SeckillConfig(
     val windowSeconds: Int = 30,
     /** 提前多久开始自动就位（打开购物车→选商品→进结算页） */
     val navigateLeadSeconds: Int = 20,
-    /** 「号码保护」刷新间隔（毫秒），移动端用轻柔节奏，避免高频触发风控 */
-    val refreshIntervalMs: Long = 1500
+    /** 「号码保护」刷新间隔（毫秒）：略快于手动，但不做高频风暴 */
+    val refreshIntervalMs: Long = 400
 )
 
 /** 抢购阶段：UI 与悬浮指引共用，保证"充分指引"。 */
