@@ -5,6 +5,9 @@
 
 import time
 import datetime
+import random
+import platform
+import re
 import requests
 import logging
 from typing import Callable, Any
@@ -23,6 +26,9 @@ import os
 
 # 设置项目根目录
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# 持久化浏览器用户目录：保存 Cookie/历史，避免每次都是"全新登录痕迹"的异常画像
+PROFILE_DIR = os.path.join(PROJECT_DIR, 'chrome_profile')
 
 # 配置日志
 logging.basicConfig(
@@ -43,6 +49,8 @@ class PlatformConfig:
     settle_button_class: str
     submit_button_css: str
     confirm_button_css: str | None = None
+    # 订单列表地址（用于提交成功后交叉验证，避免 #11 的假成功）
+    order_list_url: str = ''
 
 
 # 平台配置
@@ -53,7 +61,8 @@ PLATFORM_CONFIGS = {
         login_text='你好，请登录',
         cart_url='https://trade.jd.com/shopping/order/getOrderInfo.action',
         settle_button_class='checkout-submit',
-        submit_button_css='.checkout-submit'
+        submit_button_css='.checkout-submit',
+        order_list_url='https://order.jd.com/center/list.action'
     ),
     'tb': PlatformConfig(
         name='淘宝',
@@ -62,7 +71,8 @@ PLATFORM_CONFIGS = {
         cart_url='https://cart.taobao.com/cart.htm',
         settle_button_class='btn--QDjHtErD',
         submit_button_css='.go-btn',
-        confirm_button_css='.go-btn'
+        confirm_button_css='.go-btn',
+        order_list_url='https://buyertrade.taobao.com/trade/itemlist/list_bought_items.htm'
     ),
     'bb': PlatformConfig(
         name='哔哩哔哩',
@@ -82,26 +92,53 @@ class BrowserManager:
     # 反自动化检测脚本（在页面加载前注入，对抗淘宝/京东的 bot 检测）
     STEALTH_SCRIPT = """
         (function() {
+            var define = function(obj, prop, value) {
+                try { Object.defineProperty(obj, prop, { get: function() { return value; }, configurable: true }); } catch (e) {}
+            };
+
             // 隐藏 webdriver 痕迹
-            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-            // 删除 CDC 调试标记
-            delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
-            delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;
-            delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
-            // 伪造 plugins（正常 Chrome 有 5 个内置插件，自动化浏览器为空）
-            Object.defineProperty(navigator, 'plugins', {
-                get: () => {
-                    var plugins = [1, 2, 3, 4, 5];
-                    plugins.item = function(i) { return this[i]; };
-                    plugins.namedItem = function(name) { return null; };
-                    plugins.refresh = function() {};
-                    return plugins;
-                }
+            define(navigator, 'webdriver', undefined);
+            define(navigator, 'languages', ['zh-CN', 'zh', 'en']);
+            define(navigator, 'language', 'zh-CN');
+
+            // 删除 ChromeDriver 注入的 CDC 调试标记（键名随机，需动态清理）
+            try {
+                Object.keys(window).forEach(function(key) {
+                    if (/^(cdc_|\\$cdc_)/.test(key)) { try { delete window[key]; } catch (e) {} }
+                });
+            } catch (e) {}
+
+            // 伪造 plugins，伪装成真实 Chrome 内置 PDF 插件（必须带 name/filename/description）
+            var pluginSpecs = [
+                { name: 'PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+                { name: 'Chrome PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+                { name: 'Chromium PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+                { name: 'Microsoft Edge PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+                { name: 'WebKit built-in PDF', filename: 'internal-pdf-viewer', description: 'Portable Document Format' }
+            ];
+            var plugins = pluginSpecs.map(function(spec) {
+                return { name: spec.name, filename: spec.filename, description: spec.description, length: 1 };
             });
-            // 确保 chrome 对象存在
-            if (!window.chrome) {
-                window.chrome = { runtime: {}, loadTimes: function() {}, csi: function() {}, app: {} };
+            plugins.item = function(i) { return this[i] || null; };
+            plugins.namedItem = function(name) {
+                for (var i = 0; i < this.length; i++) { if (this[i].name === name) return this[i]; }
+                return null;
+            };
+            plugins.refresh = function() {};
+            define(navigator, 'plugins', plugins);
+
+            // 确保 chrome 对象存在且形态正常
+            if (!window.chrome) { window.chrome = {}; }
+            if (!window.chrome.runtime) { window.chrome.runtime = {}; }
+            if (!window.chrome.app) {
+                window.chrome.app = {
+                    isInstalled: false,
+                    InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' },
+                    RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' }
+                };
             }
+            if (!window.chrome.csi) { window.chrome.csi = function() { return {}; }; }
+            if (!window.chrome.loadTimes) { window.chrome.loadTimes = function() { return {}; }; }
         })();
     """
 
@@ -162,13 +199,27 @@ class BrowserManager:
     """
 
     @staticmethod
-    def create_options(headless: bool = False) -> Options:
+    def _get_chrome_major_version() -> str:
+        """获取本机 Chrome 主版本号，用于让 UA 与真实浏览器保持一致"""
+        try:
+            from webdriver_manager.core.os_manager import OperationSystemManager, ChromeType
+            version = OperationSystemManager().get_browser_version_from_os(ChromeType.GOOGLE)
+            if version:
+                return version.split(".")[0]
+        except Exception:
+            pass
+        return "148"
+
+    @staticmethod
+    def create_options(headless: bool = False, use_profile: bool = True) -> Options:
         """创建浏览器选项"""
         options = Options()
         if headless:
             options.add_argument("--headless=new")
         options.add_argument("--disable-gpu")
-        options.add_argument("--no-sandbox")
+        # --no-sandbox 在 Windows 桌面并非必要，且是容器化/自动化环境的典型特征，仅在非 Windows 下保留
+        if platform.system() != "Windows":
+            options.add_argument("--no-sandbox")
         options.add_argument("--disable-blink-features=AutomationControlled")
         options.add_argument("--disable-features=Translate,OptimizationHints,MediaRouter,DialMediaRouteProvider")
         options.add_experimental_option("excludeSwitches", ["enable-automation"])
@@ -176,9 +227,25 @@ class BrowserManager:
         # 关闭"Chrome 正受到自动测试软件的控制"提示条
         options.add_argument("--disable-infobars")
 
-        # 使用较新的 Chrome 版本 UA，匹配本地浏览器版本
-        user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+        # UA 的平台与版本必须和真实浏览器一致，否则与 Client Hints 对不上，反而更容易被识别
+        system = platform.system()
+        if system == "Windows":
+            platform_token = "Windows NT 10.0; Win64; x64"
+        elif system == "Darwin":
+            platform_token = "Macintosh; Intel Mac OS X 10_15_7"
+        else:
+            platform_token = "X11; Linux x86_64"
+        major_version = BrowserManager._get_chrome_major_version()
+        user_agent = (
+            f"Mozilla/5.0 ({platform_token}) AppleWebKit/537.36 "
+            f"(KHTML, like Gecko) Chrome/{major_version}.0.0.0 Safari/537.36"
+        )
         options.add_argument(f'user-agent={user_agent}')
+
+        # 使用持久化用户目录：保留 Cookie/历史，避免"全新 profile 立刻登录下单"的异常画像
+        if use_profile:
+            os.makedirs(PROFILE_DIR, exist_ok=True)
+            options.add_argument(f"--user-data-dir={PROFILE_DIR}")
         return options
 
     @staticmethod
@@ -336,6 +403,11 @@ class SeckillWorker:
         # 使用字典来存储确认状态，避免属性访问问题
         self._confirm_states = {}
         self.log_callback: Callable[[str], None] = log_callback or logger.info
+        # 抢购前记录的待付款订单基线，用于提交成功后的订单列表交叉验证
+        self._order_baseline: int | None = None
+        # 订单列表交叉验证的节流状态，避免每次提交尝试都开标签页
+        self._last_order_check_at: float = 0.0
+        self._last_order_check_result: bool = False
 
     def log(self, message: str):
         """记录日志"""
@@ -440,39 +512,10 @@ class SeckillWorker:
                     time.sleep(0.1)
         return False
 
-    def _refresh_item_status(self):
-        """通过切换号码保护复选框刷新商品状态"""
-        if not self.driver:
-            return
-
-        try:
-            # 查找号码保护复选框 - 使用稳定的 class 选择器
-            checkbox_input = self.driver.find_element(
-                By.CSS_SELECTOR,
-                '.settlementOption--bLHTJgxx .ant-checkbox-input'
-            )
-
-            # 获取当前状态
-            is_checked = checkbox_input.is_selected()
-
-            # 切换状态：如果选中则取消，如果未选中则选中
-            self.driver.execute_script("arguments[0].click();", checkbox_input)
-
-            # 短暂等待后恢复原来状态
-            time.sleep(0.05)
-            if self.driver:
-                checkbox_input = self.driver.find_element(
-                    By.CSS_SELECTOR,
-                    '.settlementOption--bLHTJgxx .ant-checkbox-input'
-                )
-                current_checked = checkbox_input.is_selected()
-                if current_checked == is_checked:
-                    # 状态没变，再点击一次切换
-                    self.driver.execute_script("arguments[0].click();", checkbox_input)
-
-        except Exception:
-            # 元素不存在或操作失败，静默处理
-            pass
+    @staticmethod
+    def _human_pause(low: float = 0.15, high: float = 0.4):
+        """在两次操作之间插入随机停顿，避免固定节奏的机械连点"""
+        time.sleep(random.uniform(low, high))
 
     def _wait_for_target_time(self, target_time: str):
         """等待到达目标时间（使用网络时间校准的本地时间）"""
@@ -490,7 +533,7 @@ class SeckillWorker:
 
         last_log_time = 0
         last_calibrate = time.time()
-        refresh_started = False
+        warmup_logged = False
 
         while self.running:
             # 使用本地时间 + 偏移量代替网络请求（消除 HTTP 延迟）
@@ -514,17 +557,13 @@ class SeckillWorker:
 
             time_left_seconds = (target_dt - network_time).total_seconds()
 
-            # 提前7秒开始刷新商品状态
-            if time_left_seconds <= 7 and not refresh_started:
+            # 开抢前只做一次提示。
+            # 注意：不要在此处高频切换/点击页面控件——开抢前 7 秒每 50ms 的机械操作
+            # 是最典型的机器行为特征，正是"抢购前一瞬弹滑块"的主要诱因。
+            if time_left_seconds <= 7 and not warmup_logged:
                 network_time_str = network_time.strftime('%H:%M:%S')
-                self.log(f"[{network_time_str}] 开始刷新商品状态...")
-                refresh_started = True
-
-            # 刷新状态期间，每50ms刷新一次
-            if refresh_started and time_left_seconds > 0:
-                self._refresh_item_status()
-                time.sleep(0.05)
-                continue
+                self.log(f"[{network_time_str}] 即将开抢，保持页面就绪，等待时间到达...")
+                warmup_logged = True
 
             # 每10秒输出一次等待日志
             if now_local - last_log_time >= 10:
@@ -567,10 +606,12 @@ class SeckillWorker:
         """执行抢购"""
         self.log("开始抢购！")
         retry = 0
+        consecutive_misses = 0
 
         while self.running and retry < max_retries and self.driver:
             try:
                 btn = self.driver.find_element(By.CLASS_NAME, self.config.settle_button_class)
+                consecutive_misses = 0
 
                 # 检查按钮是否被禁用（灰色不可点击状态）
                 disabled = btn.get_attribute('disabled')
@@ -578,46 +619,53 @@ class SeckillWorker:
                 classes = btn.get_attribute('class') or ''
                 if disabled is not None or aria_disabled == 'true' or 'disabled' in classes.lower() or 'unable' in classes.lower():
                     retry += 1
-                    time.sleep(0.05)
+                    self._human_pause(0.12, 0.3)
                     continue
 
                 self.log("检测到结算按钮已激活，点击提交...")
+                url_before = self.driver.current_url
                 if self._click_element_safely(btn):
-                    # 点击后验证订单是否真正提交成功
-                    if self._verify_order_submitted():
+                    # 点击后验证订单是否真正提交成功（传入点击前 URL，避免把结算页误判为成功）
+                    if self._verify_order_submitted(url_before):
                         self.log("✓ 抢购成功！请尽快付款")
                         now = TimeManager.get_network_time_str(self.platform, '%Y-%m-%d %H:%M:%S.%f')
                         self.log(f"抢购时间：{now}")
                         return True
                     else:
                         retry += 1
-                        time.sleep(0.2)
+                        # 点击后给页面的响应/跳转留出随机缓冲，避免立刻重复点击
+                        self._human_pause(0.35, 0.8)
                         if retry % 10 == 0:
                             self.log(f"订单提交未确认... 第{retry}次")
                 else:
                     retry += 1
-                    time.sleep(0.1)
+                    self._human_pause(0.15, 0.4)
             except NoSuchElementException:
                 retry += 1
-                time.sleep(0.1)
+                consecutive_misses += 1
+                # 结算按钮长时间缺失时逐步拉长间隔，避免无意义的密集轮询
+                if consecutive_misses > 30:
+                    self._human_pause(0.5, 1.2)
+                else:
+                    self._human_pause(0.15, 0.4)
                 if retry % 10 == 0:
                     self.log(f"等待结算按钮出现... 第{retry}次")
             except Exception:
                 retry += 1
-                time.sleep(0.1)
+                self._human_pause(0.15, 0.4)
                 if retry % 10 == 0:
                     self.log(f"尝试中... 第{retry}次")
 
         self.log("抢购结束，未成功")
         return False
 
-    def _verify_order_submitted(self) -> bool:
+    def _verify_order_submitted(self, url_before: str | None = None) -> bool:
         """验证订单是否真正提交成功——检查页面跳转和内容"""
         if not self.driver:
             return False
 
-        # 等待页面响应（跳转或弹窗）
-        time.sleep(1)
+        # 等待页面响应（跳转或弹窗），加入随机抖动
+        time.sleep(random.uniform(0.6, 1.2))
 
         try:
             current_url = self.driver.current_url
@@ -635,29 +683,94 @@ class SeckillWorker:
                     self.log(f"检测到失败提示: {kw}")
                     return False
 
-            # 检查成功指标 —— URL 跳转
+            # 明确的成功指标 —— 跳转到支付/收银台。
+            # 关键修复（issue #11）：不能匹配结算页自身的 URL
+            # （京东 getOrderInfo、淘宝 buy.taobao 结算页），否则会把"还在结算页"误判为成功。
             success_url_markers = {
-                'jd': ['getOrderInfo', 'pay', 'success', 'cashier'],
-                'tb': ['buy.tmall', 'buy.taobao', 'cashier', 'alipay', 'trade_detail'],
-                'bb': ['pay', 'order', 'success'],
+                'jd': ['pay.jd.com', 'cashier.jd.com', 'succeed=true'],
+                'tb': ['cashier.', 'alipay.com', 'trade_detail'],
+                'bb': ['pay.bilibili.com', 'cashier'],
             }
-            markers = success_url_markers.get(self.platform, ['pay', 'order', 'success'])
+            markers = success_url_markers.get(self.platform, [])
             for marker in markers:
-                if marker in current_url:
-                    self.log(f"页面已跳转: {current_url}")
+                if marker in current_url and (url_before is None or current_url != url_before):
+                    self.log(f"页面已跳转到支付/订单页: {current_url}")
                     return True
 
-            # 检查成功指标 —— 页面内容
-            success_texts = ['下单成功', '订单提交成功', '恭喜', '等待支付', '请尽快付款', '订单号']
-            for text in success_texts:
-                if text in page_text:
-                    self.log(f"检测到成功提示: {text}")
+            # 弱信号：页面出现疑似成功文案时不再直接判定成功，改用订单列表交叉验证
+            weak_success_texts = ['下单成功', '订单提交成功', '等待支付', '请尽快付款']
+            if any(text in page_text for text in weak_success_texts):
+                if self._has_new_pending_order():
+                    self.log("订单列表校验通过：检测到新的待付款订单")
                     return True
+                self.log("页面出现疑似成功文案，但订单列表未确认，判定为未成功")
 
         except Exception:
             pass
 
         return False
+
+    def _read_order_list_text(self) -> str | None:
+        """在新标签页读取订单列表文本，避免干扰当前结算页"""
+        if not self.driver or not self.config.order_list_url:
+            return None
+
+        original_handle = self.driver.current_window_handle
+        opened = False
+        try:
+            self.driver.switch_to.new_window('tab')
+            opened = True
+            self.driver.get(self.config.order_list_url)
+            try:
+                WebDriverWait(self.driver, 5).until(
+                    lambda d: d.execute_script("return document.readyState") == "complete"
+                )
+            except TimeoutException:
+                pass
+            time.sleep(random.uniform(0.8, 1.5))
+            return self.driver.execute_script("return document.body.innerText || '';")
+        except Exception:
+            return None
+        finally:
+            try:
+                if opened:
+                    self.driver.close()
+            except Exception:
+                pass
+            try:
+                self.driver.switch_to.window(original_handle)
+            except Exception:
+                pass
+
+    @staticmethod
+    def _count_order_rows(text: str) -> int:
+        """粗略统计订单列表中的订单标识数量（长数字串），用于前后对比"""
+        return len(re.findall(r'\d{10,}', text or ''))
+
+    def _capture_order_baseline(self):
+        """在抢购前记录待付款订单基线，供成功后订单列表校验"""
+        text = self._read_order_list_text()
+        self._order_baseline = self._count_order_rows(text) if text else None
+        if self._order_baseline is not None:
+            self.log(f"已记录订单基线：{self._order_baseline} 条（用于校验抢购结果）")
+
+    def _has_new_pending_order(self) -> bool:
+        """通过对比抢购前后订单列表，判断是否真的新增了订单"""
+        if self._order_baseline is None:
+            return False
+
+        # 节流：最快每 2 秒查一次订单列表，避免每次提交尝试都开标签页造成密集操作
+        now = time.time()
+        if now - self._last_order_check_at < 2.0:
+            return self._last_order_check_result
+        self._last_order_check_at = now
+
+        text = self._read_order_list_text()
+        if not text:
+            return self._last_order_check_result
+
+        self._last_order_check_result = self._count_order_rows(text) > self._order_baseline
+        return self._last_order_check_result
 
     def start_seckill(
         self,
@@ -713,6 +826,10 @@ class SeckillWorker:
                         except TimeoutException:
                             self.log("结算按钮检测超时，使用默认加载时间")
                             load_time = 0.5
+
+                    # 记录抢购前待付款订单基线，供提交成功后校验真实结果（issue #11）
+                    if self.config.order_list_url:
+                        self._capture_order_baseline()
 
             # 等待到达目标时间（使用网络时间）
             if target_time:

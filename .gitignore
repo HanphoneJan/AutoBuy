@@ -7,6 +7,9 @@ __pycache__/
 drivers/
 chromedriver.exe
 
+# 持久化浏览器用户目录（含登录 Cookie，不入库）
+chrome_profile/
+
 # C extensions
 *.so
 
