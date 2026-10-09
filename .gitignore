@@ -152,3 +152,6 @@ msedgedriver*
 # Temporary files
 *.tmp
 *.bak
+
+# Android Auto.js 原型需要 lib 目录（覆盖上方 Python 模板的 lib/ 忽略规则）
+!android/autojs/taobao/lib/
