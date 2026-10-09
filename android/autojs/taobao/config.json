@@ -5,8 +5,19 @@
   "wake": true,
   "keyword": "",
   "steps": [
-    { "action": "point", "x": 100, "y": 2200, "after": 150, "note": "示例：勾选目标商品（请按真机录制坐标）" },
-    { "action": "text", "value": "结算", "after": 400, "note": "无障碍可用时优先用文字定位" },
-    { "action": "image", "value": "images/taobao_submit.png", "threshold": 0.8, "after": 200, "note": "提交订单按钮模板图" }
+    {
+      "action": "point",
+      "x": 875,
+      "y": 2142,
+      "after": 1800,
+      "note": "购物车底部「结算」按钮（Weex，坐标；本机 1080x2400 实测）。运行前请先在购物车手动勾选目标商品"
+    },
+    {
+      "action": "desc",
+      "value": "立即支付",
+      "contains": true,
+      "after": 300,
+      "note": "确认订单页「立即支付」按钮（无障碍 content-desc，已实测可定位）"
+    }
   ]
 }
