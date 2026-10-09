@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">AutoBuy</string>
+    <string name="accessibility_label">AutoBuy 抢购服务</string>
+    <string name="accessibility_description">用于在淘宝/京东 App 中自动定位并点击结算、提交订单按钮。</string>
+</resources>
