@@ -20,17 +20,18 @@ import java.util.Locale
  *  准备  校准网络时间，等到 T-navigateLead 开始就位
  *  就位  自动切到购物车 → 图像识别勾选目标商品 → 点「结算/去结算」→ 进入确认订单页
  *  刷新  在确认订单页用「号码保护」开关刷新订单状态（低频可控）
- *  提交  到点快速点击「提交订单 / 立即支付」；若未开售则重进结算页刷新
+ *  提交  到点快速点击「提交订单 / 立即支付」；
+ *        未在确认页则重新就位，未开售则重进结算页刷新，直到成功或超出窗口
  *
- * 淘宝：购物车/确认页为 Weex，用图像识别；提交按钮用 content-desc。
- * 京东：购物车为自绘视图，用图像识别；确认页（普通订单）有「号码保护」开关。
+ * 淘宝：购物车/确认页为 Weex，图像识别；提交按钮 content-desc。
+ * 京东：购物车为自绘视图，图像识别；普通订单确认页有「号码保护」开关。
+ * 预售/预约/定时开卖：开售前不可选或显示"暂时不能购买"，到点后重试即可。
  */
 class SeckillEngine(private val context: Context) {
 
     private val taobaoPkg = "com.taobao.taobao"
     private val jdPkg = "com.jingdong.app.mall"
 
-    // 淘宝「结算」为橙色；京东「去结算」为红色
     private val taobaoSettleColor = Color.rgb(0xFF, 0x6A, 0x00)
     private val jdSettleColor = Color.rgb(0xE1, 0x25, 0x1B)
 
@@ -39,6 +40,9 @@ class SeckillEngine(private val context: Context) {
 
     private val privacyKeywords = listOf("号码保护", "隐私号码", "隐私保护")
     private val submitKeywords = listOf("立即支付", "提交订单")
+    private val notOnSaleKeywords = listOf(
+        "暂时不能购买", "未开售", "未开始", "即将开售", "立即支付￥0", "提交订单￥0"
+    )
 
     suspend fun run(config: SeckillConfig) {
         val a11y = AutoBuyAccessibilityService.instance
@@ -87,14 +91,14 @@ class SeckillEngine(private val context: Context) {
 
         LogBus.setStage(Stage.NAVIGATE)
         if (!navigateToConfirm(a11y, pkg, checkboxTemplate, settleText, settleColor)) {
-            LogBus.add("自动就位未完成，请确认 App 已登录、购物车已打开")
+            LogBus.add("暂未就位（预约/预售商品可能到点才可选），到点会重试")
         }
 
         LogBus.setStage(Stage.REFRESH)
         refreshUntilTarget(a11y, config, ::now)
 
         LogBus.setStage(Stage.SUBMIT)
-        if (submitWithRetry(a11y, config, ::now)) {
+        if (submitWithRetry(a11y, config, ::now, pkg, checkboxTemplate, settleText, settleColor)) {
             LogBus.add("已提交，请尽快确认付款")
             LogBus.setStage(Stage.DONE)
         } else {
@@ -103,56 +107,47 @@ class SeckillEngine(private val context: Context) {
         }
     }
 
-    /** 自动就位：切到购物车 → 选商品 → 结算 → 确认订单页。 */
+    /** 自动就位：切到购物车 → 选商品 → 结算 → 确认订单页。fast 用于到点后的快速重试。 */
     private suspend fun navigateToConfirm(
         a11y: AutoBuyAccessibilityService,
         pkg: String,
         checkboxTemplate: String,
         settleText: List<String>,
-        settleColor: Int
+        settleColor: Int,
+        pkgWaitSeconds: Int = 15,
+        fast: Boolean = false
     ): Boolean {
-        if (a11y.hasDesc(submitKeywords, contains = true)) {
-            LogBus.add("已在确认订单页，跳过就位")
-            return true
-        }
+        if (a11y.hasDesc(submitKeywords, contains = true)) return true
 
         var waited = 0
-        while (a11y.currentPackage() != pkg && waited < 15) {
-            if (waited == 0) LogBus.add("请切换到目标 App 并停留在购物车页（当前：${a11y.currentPackage() ?: "未知"}）...")
+        while (a11y.currentPackage() != pkg && waited < pkgWaitSeconds) {
+            if (waited == 0 && pkgWaitSeconds > 3) {
+                LogBus.add("请切换到目标 App 并停留在购物车页（当前：${a11y.currentPackage() ?: "未知"}）...")
+            }
             delay(1000)
             waited++
         }
-        if (a11y.currentPackage() != pkg) {
-            LogBus.add("目标 App 不在前台，跳过自动就位")
-            return false
-        }
+        if (a11y.currentPackage() != pkg) return false
 
-        // 打开购物车（底部 Tab：淘宝文字、京东 content-desc「购物车N」）
-        a11y.clickByTextOrDesc(listOf("购物车"), contains = true, timeoutMs = 1500)
-        delay(1500)
+        // 打开购物车
+        a11y.clickByTextOrDesc(listOf("购物车"), contains = true, timeoutMs = if (fast) 600 else 1500)
+        delay(if (fast) 800 else 1500)
 
         // 勾选第一个未选中的商品（图像识别 + 环形校验，取最上方）
-        stepTemplate(
-            a11y,
-            checkboxTemplate,
-            checkboxRegion,
-            0.86f,
-            topmost = true,
-            deadline = System.currentTimeMillis() + 6000,
-            label = "勾选第一个商品"
-        )
-        delay(700)
+        val selectDeadline = System.currentTimeMillis() + if (fast) 2000 else 6000
+        stepTemplate(a11y, checkboxTemplate, checkboxRegion, 0.86f, true, selectDeadline, "勾选第一个商品")
+        delay(if (fast) 400 else 700)
 
         // 点击「结算 / 去结算」
-        val settled = clickSettle(a11y, settleText, settleColor, System.currentTimeMillis() + 6000)
-        if (!settled) {
-            LogBus.add("未找到结算按钮")
+        val settleDeadline = System.currentTimeMillis() + if (fast) 2000 else 6000
+        if (!clickSettle(a11y, settleText, settleColor, settleDeadline)) {
             return false
         }
-        delay(2500)
+        delay(if (fast) 1200 else 2500)
 
         var w = 0
-        while (!a11y.hasDesc(submitKeywords, contains = true) && w < 8) {
+        val maxW = if (fast) 4 else 8
+        while (!a11y.hasDesc(submitKeywords, contains = true) && w < maxW) {
             delay(500)
             w++
         }
@@ -209,24 +204,33 @@ class SeckillEngine(private val context: Context) {
     }
 
     /**
-     * 到点提交：快速连点提交按钮；若商品尚未开售（预售/预约/定时开卖），
-     * 退回购物车重新进入结算页刷新后再提交，直到成功或超出窗口。
+     * 到点提交：快速连点提交按钮；
+     *  - 不在确认页 → 快速重新就位（预约商品到点才可选）；
+     *  - 在确认页但未开售 → 退回购物车重进结算页刷新；
+     * 直到成功或超出窗口。
      */
     private suspend fun submitWithRetry(
         a11y: AutoBuyAccessibilityService,
         config: SeckillConfig,
-        now: () -> Long
+        now: () -> Long,
+        pkg: String,
+        checkboxTemplate: String,
+        settleText: List<String>,
+        settleColor: Int
     ): Boolean {
         val deadline = config.targetTimeMs + config.windowSeconds * 1000L
         var reenter = 0
+        var reachedConfirm = false
         while (now() < deadline) {
             if (!a11y.hasDesc(submitKeywords, contains = true)) {
-                return true
+                // 曾到过确认页、现在离开 → 视为已提交
+                if (reachedConfirm) return true
+                navigateToConfirm(a11y, pkg, checkboxTemplate, settleText, settleColor, pkgWaitSeconds = 3, fast = true)
+                if (a11y.hasDesc(submitKeywords, contains = true)) reachedConfirm = true
+                continue
             }
-            val notOnSale = a11y.hasDesc(
-                listOf("暂时不能购买", "未开售", "未开始", "即将开售", "立即支付￥0", "提交订单￥0"),
-                contains = true
-            )
+            reachedConfirm = true
+            val notOnSale = a11y.hasDesc(notOnSaleKeywords, contains = true)
             if (notOnSale && reenter < 12) {
                 reenter++
                 LogBus.add("商品尚未开售，重新进入结算页刷新（第 $reenter 次）...")
@@ -234,14 +238,14 @@ class SeckillEngine(private val context: Context) {
                 delay(700)
                 a11y.clickByTextOrDesc(listOf("购物车"), contains = true, timeoutMs = 800)
                 delay(700)
-                clickSettle(a11y, listOf("结算", "去结算"), taobaoSettleColor, System.currentTimeMillis() + 3000)
+                clickSettle(a11y, settleText, settleColor, System.currentTimeMillis() + 3000)
                 delay(1000)
                 continue
             }
             a11y.clickByTextOrDesc(submitKeywords, contains = true, timeoutMs = 250)
             delay(250)
         }
-        return !a11y.hasDesc(submitKeywords, contains = true)
+        return reachedConfirm && !a11y.hasDesc(submitKeywords, contains = true)
     }
 
     private suspend fun stepTemplate(
