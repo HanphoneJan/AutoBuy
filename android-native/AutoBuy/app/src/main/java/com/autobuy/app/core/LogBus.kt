@@ -20,6 +20,7 @@ object LogBus {
     fun add(message: String) {
         val line = "[${fmt.format(Date())}] $message"
         _logs.value = (_logs.value + line).takeLast(MAX)
+        android.util.Log.d("AutoBuy", line)
     }
 
     fun clear() {

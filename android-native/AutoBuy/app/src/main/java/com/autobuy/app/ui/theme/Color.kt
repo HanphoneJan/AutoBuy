@@ -3,25 +3,25 @@ package com.autobuy.app.ui.theme
 import androidx.compose.ui.graphics.Color
 
 /**
- * AutoBuy 的 Material 3 双主题色板（参考 hanphone-blog 的 Color.kt 组织方式）：
- * 靛蓝 primary + slate 中性色，完整映射 M3 色彩角色。
+ * AutoBuy 的 Material 3 双主题色板，沿用 hanphone-blog/android 的 slate + blue 方案，
+ * 完整映射 M3 色彩角色，保证与参考 App 视觉一致。
  */
 
 // ---- Light ----
-val LightPrimary = Color(0xFF4F46E5)
+val LightPrimary = Color(0xFF2563EB)
 val LightOnPrimary = Color(0xFFFFFFFF)
-val LightPrimaryContainer = Color(0xFFEEF2FF)
-val LightOnPrimaryContainer = Color(0xFF3730A3)
+val LightPrimaryContainer = Color(0xFFEFF6FF)
+val LightOnPrimaryContainer = Color(0xFF1D4ED8)
 
 val LightSecondary = Color(0xFF64748B)
 val LightOnSecondary = Color(0xFFFFFFFF)
 val LightSecondaryContainer = Color(0xFFF1F5F9)
 val LightOnSecondaryContainer = Color(0xFF0F172A)
 
-val LightTertiary = Color(0xFF0EA5E9)
+val LightTertiary = Color(0xFF475569)
 val LightOnTertiary = Color(0xFFFFFFFF)
-val LightTertiaryContainer = Color(0xFFE0F2FE)
-val LightOnTertiaryContainer = Color(0xFF075985)
+val LightTertiaryContainer = Color(0xFFE2E8F0)
+val LightOnTertiaryContainer = Color(0xFF0F172A)
 
 val LightBackground = Color(0xFFFFFFFF)
 val LightOnBackground = Color(0xFF0F172A)
@@ -44,20 +44,20 @@ val LightErrorContainer = Color(0xFFFEE2E2)
 val LightOnErrorContainer = Color(0xFF7F1D1D)
 
 // ---- Dark ----
-val DarkPrimary = Color(0xFF818CF8)
-val DarkOnPrimary = Color(0xFF1E1B4B)
-val DarkPrimaryContainer = Color(0xFF312E81)
-val DarkOnPrimaryContainer = Color(0xFFC7D2FE)
+val DarkPrimary = Color(0xFF3B82F6)
+val DarkOnPrimary = Color(0xFFFFFFFF)
+val DarkPrimaryContainer = Color(0xFF1E293B)
+val DarkOnPrimaryContainer = Color(0xFF93C5FD)
 
 val DarkSecondary = Color(0xFF94A3B8)
 val DarkOnSecondary = Color(0xFF0F172A)
 val DarkSecondaryContainer = Color(0xFF1E293B)
 val DarkOnSecondaryContainer = Color(0xFFE2E8F0)
 
-val DarkTertiary = Color(0xFF38BDF8)
-val DarkOnTertiary = Color(0xFF082F49)
-val DarkTertiaryContainer = Color(0xFF0C4A6E)
-val DarkOnTertiaryContainer = Color(0xFFBAE6FD)
+val DarkTertiary = Color(0xFFCBD5E1)
+val DarkOnTertiary = Color(0xFF0F172A)
+val DarkTertiaryContainer = Color(0xFF334155)
+val DarkOnTertiaryContainer = Color(0xFFE2E8F0)
 
 val DarkBackground = Color(0xFF020617)
 val DarkOnBackground = Color(0xFFF1F5F9)
