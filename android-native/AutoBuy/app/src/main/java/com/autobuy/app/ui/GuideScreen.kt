@@ -127,7 +127,7 @@ fun GuideScreen(onGoSeckill: () -> Unit) {
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    AutoItem("无障碍服务可能被系统（尤其 MIUI）关闭，抢购前请确认这里显示「已开启」")
+                    AutoItem("无障碍服务可能被系统关闭，抢购前请确认这里显示「已开启」")
                     AutoItem("抢购前不要重装或强制停止 AutoBuy，否则无障碍会掉")
                     AutoItem("本工具仅用于学习交流，自动化可能违反平台条款，账号风险自负")
                 }
