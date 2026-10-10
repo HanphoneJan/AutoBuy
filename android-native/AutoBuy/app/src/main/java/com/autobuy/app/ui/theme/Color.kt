@@ -3,8 +3,9 @@ package com.autobuy.app.ui.theme
 import androidx.compose.ui.graphics.Color
 
 /**
- * AutoBuy 的 Material 3 双主题色板，沿用 hanphone-blog/android 的 slate + blue 方案，
- * 完整映射 M3 色彩角色，保证与参考 App 视觉一致。
+ * AutoBuy 的 Material 3 双主题色板 —— 对齐 hanphone-blog/android 的配色：
+ * 白日：primary #2563EB（blue-600）、slate 中性色；黑夜：primary #3B82F6（blue-500）、slate 深色。
+ * 完整映射 M3 色彩角色，浅色/深色两套。
  */
 
 // ---- Light ----

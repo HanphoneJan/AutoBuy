@@ -1,6 +1,7 @@
 package com.autobuy.app.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,32 +20,50 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.autobuy.app.core.ThemePref
 import com.autobuy.app.ui.theme.AutoBuyTheme
 
 @Composable
 fun AutoBuyAppRoot() {
-    AutoBuyTheme {
+    val context = LocalContext.current
+    var themeMode by remember { mutableStateOf(ThemePref.get(context)) }
+    val darkTheme = when (themeMode) {
+        ThemePref.LIGHT -> false
+        ThemePref.DARK -> true
+        else -> isSystemInDarkTheme()
+    }
+
+    AutoBuyTheme(darkTheme = darkTheme) {
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background,
             contentColor = MaterialTheme.colorScheme.onBackground
         ) {
-            MainScaffold()
+            MainScaffold(
+                themeMode = themeMode,
+                onThemeModeChange = {
+                    themeMode = it
+                    ThemePref.set(context, it)
+                }
+            )
         }
     }
 }
 
 @Composable
-private fun MainScaffold() {
+private fun MainScaffold(themeMode: String, onThemeModeChange: (String) -> Unit) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
@@ -123,7 +142,9 @@ private fun MainScaffold() {
                 GuideScreen(onGoSeckill = { navController.navigate(MainTab.SECKILL.route) })
             }
             composable(MainTab.LOGS.route) { LogsScreen() }
-            composable(MainTab.MINE.route) { MineScreen() }
+            composable(MainTab.MINE.route) {
+                MineScreen(themeMode = themeMode, onThemeModeChange = onThemeModeChange)
+            }
         }
     }
 }

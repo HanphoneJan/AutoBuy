@@ -2,6 +2,7 @@ package com.autobuy.app.ui
 
 import android.widget.Toast
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,6 +16,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -33,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.autobuy.app.BuildConfig
 import com.autobuy.app.R
+import com.autobuy.app.core.ThemePref
 import com.autobuy.app.core.Updater
 import com.autobuy.app.ui.components.AppCard
 import com.autobuy.app.ui.components.RowDivider
@@ -41,15 +44,16 @@ import com.autobuy.app.ui.components.SectionTitle
 import com.autobuy.app.ui.components.SettingRow
 import kotlinx.coroutines.launch
 
-/** 我的页：App 信息 + 关于（检查更新 / 仓库 / 反馈）+ 免责声明。 */
+/** 我的页：App 信息 + 外观 + 关于（检查更新 / 仓库 / 反馈）+ 免责声明。 */
 @Composable
-fun MineScreen() {
+fun MineScreen(themeMode: String, onThemeModeChange: (String) -> Unit) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
     val scope = rememberCoroutineScope()
 
     var checking by remember { mutableStateOf(false) }
     var update by remember { mutableStateOf<Updater.UpdateInfo?>(null) }
+    var showTheme by remember { mutableStateOf(false) }
 
     fun checkUpdate() {
         if (checking) return
@@ -109,6 +113,15 @@ fun MineScreen() {
                 }
             }
 
+            SectionTitle("外观")
+            AppCard {
+                SettingRow(
+                    title = "主题",
+                    desc = themeLabel(themeMode),
+                    onClick = { showTheme = true }
+                )
+            }
+
             SectionTitle("关于")
             AppCard {
                 SettingRow(
@@ -147,6 +160,45 @@ fun MineScreen() {
         }
     }
 
+    if (showTheme) {
+        AlertDialog(
+            onDismissRequest = { showTheme = false },
+            title = { Text("主题") },
+            text = {
+                Column {
+                    listOf(
+                        ThemePref.SYSTEM to "跟随系统",
+                        ThemePref.LIGHT to "浅色",
+                        ThemePref.DARK to "深色"
+                    ).forEach { (mode, label) ->
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    onThemeModeChange(mode)
+                                    showTheme = false
+                                }
+                                .padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = themeMode == mode,
+                                onClick = {
+                                    onThemeModeChange(mode)
+                                    showTheme = false
+                                }
+                            )
+                            Text(label, style = MaterialTheme.typography.bodyLarge)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showTheme = false }) { Text("关闭") }
+            }
+        )
+    }
+
     update?.let { info ->
         AlertDialog(
             onDismissRequest = { update = null },
@@ -182,4 +234,10 @@ fun MineScreen() {
             }
         )
     }
+}
+
+private fun themeLabel(mode: String): String = when (mode) {
+    ThemePref.LIGHT -> "浅色"
+    ThemePref.DARK -> "深色"
+    else -> "跟随系统"
 }

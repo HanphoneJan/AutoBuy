@@ -25,10 +25,12 @@ object LogBus {
         val line = "[${fmt.format(Date())}] $message"
         _logs.value = (_logs.value + line).takeLast(MAX)
         android.util.Log.d("AutoBuy", line)
+        FileLogger.append(message)
     }
 
     fun clear() {
         _logs.value = emptyList()
+        FileLogger.clear()
     }
 
     fun setRunning(value: Boolean) {

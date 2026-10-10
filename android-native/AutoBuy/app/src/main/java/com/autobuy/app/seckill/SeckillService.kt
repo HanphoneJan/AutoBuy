@@ -86,6 +86,7 @@ class SeckillService : Service() {
                 )
             } catch (e: Exception) {
                 LogBus.add("任务异常：${e.message}")
+                LogBus.add(e.stackTraceToString())
             } finally {
                 LogBus.add("任务结束")
                 LogBus.setRunning(false)
