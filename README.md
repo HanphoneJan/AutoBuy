@@ -115,7 +115,6 @@ uv run python seckill.py tb --time "2025-03-19 11:00:00.000000"
 ```
 AutoBuy/
 ├── android-native/AutoBuy/   # 📱 原生 Android App（Kotlin + Compose + Material 3）— 推荐
-├── android/                  # 早期 Auto.js 原型（已验证安卓无障碍链路）
 ├── app.py / seckill.py       # 💻 电脑网页版（Selenium）
 ├── static/ templates/        # 网页版前端
 └── README.md

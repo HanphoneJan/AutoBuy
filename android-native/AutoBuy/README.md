@@ -1,7 +1,7 @@
 # AutoBuy（原生 Android）
 
 淘宝/京东**官方 App** 抢购自动化，原生 Android 实现（Kotlin + Jetpack Compose + Material 3）。
-是仓库根目录 PC 版（Selenium）与 `android/autojs` 原型的原生替代。
+是仓库根目录 PC 版（Selenium）的原生替代。早期真机勘察结论见 [`docs/device-survey.md`](docs/device-survey.md)。
 
 > ⚠️ 仅用于学习交流。自动化操作官方 App 可能违反平台服务条款，账号风险自负，请勿商用或分发。
 

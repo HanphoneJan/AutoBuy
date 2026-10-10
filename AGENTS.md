@@ -9,7 +9,6 @@ AutoBuy 是一个**淘宝/京东自动抢购**项目，仓库里有两套实现�
 | 目录 | 形态 | 状态 |
 |------|------|------|
 | `android-native/AutoBuy/` | **原生 Android App**（Kotlin + Jetpack Compose + Material 3），无障碍 + 图像识别自动化**官方 App** | **主线 / 推荐** |
-| `android/` | 早期 Auto.js 原型（验证安卓无障碍链路） | 归档 |
 | 根目录 `app.py` / `seckill.py` / `templates/` / `static/` | 电脑网页版（Python + Selenium + Flask） | 备选 |
 
 > 新接手请优先阅读本文的 **「Android 原生 App」** 章节——那是当前主线。
