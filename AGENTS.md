@@ -6,6 +6,10 @@ This file provides guidance to AI coding agents (Claude Code, opencode, Cursor, 
 
 基于 Selenium 的淘宝/京东自动抢购工具。通过 Flask Web 界面控制 Chrome 浏览器自动化操作，用户在浏览器中手动完成登录和购物车选择，程序在到达设定时间后自动提交订单。
 
+> 仓库还包含移动端实现：
+> - `android-native/AutoBuy`：原生 Android App（Kotlin + Jetpack Compose + Material 3），基于无障碍服务 + 图像识别自动化淘宝/京东官方 App。
+> - `android/`：早期 Auto.js 原型。
+
 ## Commands
 
 ```bash

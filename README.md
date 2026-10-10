@@ -199,6 +199,13 @@ http://localhost:5000
 7. 使用 Web 界面时，请勿关闭浏览器窗口或刷新页面
 8. 浏览器窗口会自动定位到屏幕右侧，避免遮挡前端界面
 
+## 📱 相关项目
+
+- **原生 Android App（推荐）**：`android-native/AutoBuy` —— Kotlin + Jetpack Compose + Material 3，
+  基于**无障碍服务 + 图像识别**自动化淘宝/京东**官方 App**，含底部导航、步骤指引、日志导出、检查更新。
+  安装包见 [Releases](https://github.com/HanphoneJan/AutoBuy/releases)。
+- **Auto.js 原型**：`android/` —— 早期用 Auto.js 验证安卓无障碍链路的原型。
+
 ## 🐛 问题反馈
 
 若使用过程中遇到bug或有功能建议，欢迎通过以下方式反馈：
