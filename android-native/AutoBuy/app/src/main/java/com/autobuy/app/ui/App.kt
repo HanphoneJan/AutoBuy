@@ -119,7 +119,9 @@ private fun MainScaffold() {
             composable(MainTab.SECKILL.route) {
                 SeckillScreen(onOpenGuide = { navController.navigate(MainTab.GUIDE.route) })
             }
-            composable(MainTab.GUIDE.route) { GuideScreen() }
+            composable(MainTab.GUIDE.route) {
+                GuideScreen(onGoSeckill = { navController.navigate(MainTab.SECKILL.route) })
+            }
             composable(MainTab.LOGS.route) { LogsScreen() }
             composable(MainTab.MINE.route) { MineScreen() }
         }

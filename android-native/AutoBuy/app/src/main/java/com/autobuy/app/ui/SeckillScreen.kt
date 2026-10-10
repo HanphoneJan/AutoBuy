@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -145,6 +146,16 @@ fun SeckillScreen(onOpenGuide: () -> Unit) {
                     placeholder = "yyyy-MM-dd HH:mm:ss",
                     leadingIcon = Icons.Filled.Schedule
                 )
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    AssistChip(onClick = { targetText = todayAt(12, 0) }, label = { Text("今天 12:00") })
+                    AssistChip(onClick = { targetText = todayAt(20, 0) }, label = { Text("今晚 20:00") })
+                    AssistChip(onClick = { targetText = defaultTargetText() }, label = { Text("现在+1分") })
+                }
                 RowDivider()
                 CompactField(
                     label = "商品关键词（可选）",
@@ -205,14 +216,14 @@ private fun ReadinessPrompt(onOpenGuide: () -> Unit) {
             )
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text("尚未就绪", style = MaterialTheme.typography.titleMedium)
+                Text("还不能开始", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "无障碍服务未开启，抢购前需先准备",
+                    "请先按「指引」完成准备：开启无障碍服务",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            TextButton(onClick = onOpenGuide) { Text("去准备") }
+            TextButton(onClick = onOpenGuide) { Text("去指引") }
         }
     }
 }
@@ -243,6 +254,16 @@ private fun StageCard(stage: Stage) {
 
 private fun defaultTargetText(): String {
     val cal = Calendar.getInstance().apply { add(Calendar.MINUTE, 1) }
+    return SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(cal.time)
+}
+
+private fun todayAt(hour: Int, minute: Int): String {
+    val cal = Calendar.getInstance().apply {
+        set(Calendar.HOUR_OF_DAY, hour)
+        set(Calendar.MINUTE, minute)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
     return SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(cal.time)
 }
 
