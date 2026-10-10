@@ -170,30 +170,23 @@ fun SeckillScreen(onOpenGuide: () -> Unit) {
                 StageCard(stage)
             }
 
-            Button(
-                onClick = onStart,
-                enabled = !running,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-            ) {
-                Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("开始抢购")
-            }
-            OutlinedButton(
-                onClick = {
-                    SeckillService.stop(context)
-                    LogBus.add("已请求停止")
-                },
-                enabled = running,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-            ) {
-                Icon(Icons.Filled.Stop, contentDescription = null, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("停止")
+            if (!running) {
+                Button(
+                    onClick = onStart,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("开始抢购")
+                }
+            } else {
+                OutlinedButton(
+                    onClick = {
+                        SeckillService.stop(context)
+                        LogBus.add("已请求停止")
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("停止抢购")
+                }
             }
         }
     }

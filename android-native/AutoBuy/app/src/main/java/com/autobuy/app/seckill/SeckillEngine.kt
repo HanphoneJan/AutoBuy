@@ -99,12 +99,53 @@ class SeckillEngine(private val context: Context) {
 
         LogBus.setStage(Stage.SUBMIT)
         if (submitWithRetry(a11y, config, ::now, pkg, checkboxTemplate, settleText, settleColor)) {
-            LogBus.add("已提交，请尽快确认付款")
+            LogBus.add("已提交，正在回查订单...")
+            LogBus.setStage(Stage.VERIFY)
+            val verified = verifyOrder(a11y, config.platform, config.keyword)
+            LogBus.add(if (verified) "回查通过：已进入支付/待付款，请尽快付款" else "回查未确认，请手动到「待付款」核对")
             LogBus.setStage(Stage.DONE)
         } else {
             LogBus.add("未能确认提交，请手动检查")
             LogBus.setStage(Stage.VERIFY)
         }
+    }
+
+    /**
+     * 结果回查：提交后确认是否真的生成了订单。
+     * 1) 当前页若是支付/收银台 → 成功；
+     * 2) 否则打开「我的 → 待付款」订单列表，核对是否有订单（有 keyword 时按关键词匹配）。
+     */
+    private suspend fun verifyOrder(
+        a11y: AutoBuyAccessibilityService,
+        platform: Platform,
+        keyword: String
+    ): Boolean {
+        delay(1500)
+        if (a11y.hasText(listOf("收银台", "支付宝", "付款", "待付款"), contains = true) ||
+            a11y.hasDesc(listOf("收银台", "支付宝", "付款"), contains = true)
+        ) {
+            return true
+        }
+        // 打开订单列表回查
+        if (platform == Platform.TAOBAO) {
+            a11y.clickByText(listOf("我的淘宝"), contains = false, timeoutMs = 1500)
+            delay(1500)
+            a11y.clickByText(listOf("待付款"), contains = false, timeoutMs = 1500)
+            delay(2500)
+        } else {
+            a11y.clickByTextOrDesc(listOf("我的"), contains = false, timeoutMs = 1500)
+            delay(1500)
+            a11y.clickByText(listOf("待付款"), contains = false, timeoutMs = 1500)
+            delay(2500)
+        }
+        val onPending = a11y.hasText(listOf("待付款"), contains = true) ||
+            a11y.hasDesc(listOf("待付款"), contains = true)
+        if (!onPending) return false
+        if (keyword.isNotBlank()) {
+            return a11y.hasText(listOf(keyword), contains = true) ||
+                a11y.hasDesc(listOf(keyword), contains = true)
+        }
+        return true
     }
 
     /** 自动就位：切到购物车 → 选商品 → 结算 → 确认订单页。fast 用于到点后的快速重试。 */
