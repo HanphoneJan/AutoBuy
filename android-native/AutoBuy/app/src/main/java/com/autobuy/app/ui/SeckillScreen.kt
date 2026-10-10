@@ -21,7 +21,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.AssistChip
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -152,9 +152,9 @@ fun SeckillScreen(onOpenGuide: () -> Unit) {
                         .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    AssistChip(onClick = { targetText = todayAt(12, 0) }, label = { Text("今天 12:00") })
-                    AssistChip(onClick = { targetText = todayAt(20, 0) }, label = { Text("今晚 20:00") })
-                    AssistChip(onClick = { targetText = defaultTargetText() }, label = { Text("现在+1分") })
+                    SuggestionChip(onClick = { targetText = todayAt(12, 0) }, label = { Text("今天 12:00") })
+                    SuggestionChip(onClick = { targetText = todayAt(20, 0) }, label = { Text("今晚 20:00") })
+                    SuggestionChip(onClick = { targetText = defaultTargetText() }, label = { Text("现在+1分") })
                 }
                 RowDivider()
                 CompactField(
