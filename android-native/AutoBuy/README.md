@@ -78,3 +78,24 @@ android-native/AutoBuy/
 ├── app/src/main/assets/templates/   # 图像识别模板
 └── app/src/main/res/                # 图标/字符串/无障碍配置/FileProvider
 ```
+
+## 架构（类地图）
+- `accessibility/AutoBuyAccessibilityService` — 无障碍：按 text/desc 找点、坐标手势、无障碍截图、返回
+- `core/ImageMatcher` — 灰度 SAD 模板匹配（缩放/比例区域/topmost/环形校验）+ 纯色质心
+- `core/TimeSync` — 对齐淘宝服务器时间
+- `seckill/SeckillEngine` — 抢购流程（见上）；`seckill/SeckillService` — 前台服务
+- `core/LogBus` + `FileLogger` + `LogExporter` — 日志/持久化/诊断导出
+- `core/Updater` — 检查更新；`core/ThemePref` + `ui/theme/*` — 主题
+- `ui/*` — 底部导航四页 + `GuidanceOverlay` 悬浮指引 + `components/*` 通用组件
+
+## 扩展
+- **加平台**：在 `SeckillConfig.Platform` 加枚举；在 `SeckillEngine.run()` 的 `when` 里给出包名、勾选模板、结算文案与颜色；必要时补模板图。
+- **换/加模板**：把截图裁成小图（尽量**不含文字**）放进 `assets/templates/`，在引擎里引用；模板按参考宽度 1080 采集，运行时按 `device.width` 缩放。
+- **改刷新方式**：`SeckillConfig.refreshIntervalMs`；「号码保护」关键词在 `SeckillEngine.privacyKeywords`。
+
+## 已知问题
+- **无障碍服务会被系统关闭**（重装/更新 App 后尤其明显）；抢购前请确认 App 内显示「已开启」，且**不要重装/强制停止** App。
+- 图像识别按"最上方复选框"，**不能按关键词精确选品**；购物车改版后可能需重录模板。
+- **未实现**：定时待命（到点自动唤醒）、看门狗（无障碍掉线自愈）、常亮（WakeLock）。
+- 详见仓库根 `AGENTS.md` 的「Android 原生 App」章节。
+
