@@ -79,6 +79,10 @@ android-native/AutoBuy/
 └── app/src/main/res/                # 图标/字符串/无障碍配置/FileProvider
 ```
 
+## 系统要求
+- **最低 Android 7.0（API 24）**；推荐 **Android 11+（API 30）**。
+- 原因：坐标点击需 API 24+；**图像识别依赖无障碍截图，需 Android 11+**。Android 11 以下只能按 text/desc 点击，购物车（Weex）选品不可用。
+
 ## 架构（类地图）
 - `accessibility/AutoBuyAccessibilityService` — 无障碍：按 text/desc 找点、坐标手势、无障碍截图、返回
 - `core/ImageMatcher` — 灰度 SAD 模板匹配（缩放/比例区域/topmost/环形校验）+ 纯色质心

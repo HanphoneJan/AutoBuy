@@ -19,7 +19,8 @@ AutoBuy 是一个**淘宝/京东自动抢购**项目，仓库里有两套实现�
 ## Android 原生 App（`android-native/AutoBuy/`）—— 主线
 
 ### 技术栈
-Kotlin + Jetpack Compose + Material 3；Gradle 8.11.1 + AGP 8.7.3 + Kotlin 2.0.21；minSdk 26 / compileSdk 35。
+Kotlin + Jetpack Compose + Material 3；Gradle 8.11.1 + AGP 8.7.3 + Kotlin 2.0.21；**minSdk 24（Android 7.0）/ compileSdk 35**。
+> 功能范围：**安装**支持 Android 7.0+；但**图像识别依赖无障碍截图（Android 11+）**，Android 11 以下只能做 text/desc 点击，购物车（Weex）选品会不可用。
 应用包名 `com.autobuy.app`；版本号在 `android-native/AutoBuy/app/build.gradle.kts`（`versionCode` / `versionName`）。
 
 ### 目录 / 类地图

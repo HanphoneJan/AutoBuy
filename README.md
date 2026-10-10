@@ -18,6 +18,8 @@ AutoBuy 提供两种抢购方式：
 
 **下载安装**：[Releases](https://github.com/HanphoneJan/AutoBuy/releases) 里的 `AutoBuy-*.apk`（直接安装，无需电脑）。
 
+> 系统要求：**最低 Android 7.0**，**推荐 Android 11+**（图像识别依赖无障碍截图，Android 11+ 才可用）。
+
 ### 核心特性
 - ✅ 直接操作**官方 App**（淘宝 / 京东），无需电脑、无需 Root
 - ✅ **无障碍 + 图像识别**双方案：能点按钮、能认商品
