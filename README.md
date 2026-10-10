@@ -1,216 +1,127 @@
-# 🛒 淘宝京东自动抢购工具
+# 🛒 AutoBuy · 淘宝京东自动抢购
 
 [![GitHub Stars](https://img.shields.io/github/stars/HanphoneJan/AutoBuy?style=for-the-badge&color=FFD700&logo=github)](https://github.com/HanphoneJan/AutoBuy)
-[![Update Time](https://img.shields.io/badge/Last%20Update-2024.11.18-FF6347?style=for-the-badge&logo=clock)](https://github.com/HanphoneJan/AutoBuy/commits/main)
+[![Release](https://img.shields.io/github/v/release/HanphoneJan/AutoBuy?style=for-the-badge&color=2563EB&logo=android)](https://github.com/HanphoneJan/AutoBuy/releases)
 
-## 📌 项目简介
+AutoBuy 提供两种抢购方式：
 
-一款基于 Selenium 开发的 **Windows 网页端抢购工具**，支持淘宝、京东平台商品定时自动提交订单，解放双手，助力高效抢购～
+| 方式 | 说明 | 推荐度 |
+|------|------|--------|
+| 📱 **原生 Android App** | 直接自动化淘宝/京东**官方 App**，免电脑、免 Root | ⭐ **推荐** |
+| 💻 电脑网页版 | 基于 Selenium 驱动 Chrome 网页端 | 备选 |
+
+> ⚠️ 本工具仅用于学习交流，自动化操作可能违反平台服务条款，**账号风险自负**，请勿商用或分发。
+
+---
+
+## 📱 原生 Android App（推荐）
+
+**下载安装**：[Releases](https://github.com/HanphoneJan/AutoBuy/releases) 里的 `AutoBuy-*.apk`（直接安装，无需电脑）。
 
 ### 核心特性
+- ✅ 直接操作**官方 App**（淘宝 / 京东），无需电脑、无需 Root
+- ✅ **无障碍 + 图像识别**双方案：能点按钮、能认商品
+- ✅ **免截图授权**（用无障碍截图，不像网页方案每次弹窗）
+- ✅ 全流程：到点自动**就位 → 刷新 → 提交 → 回查订单**
+- ✅ 支持**预售/预约/定时开卖**（到点自动重试）
+- ✅ 底部导航四页：**抢购 / 指引 / 日志 / 我的**，步骤式引导
+- ✅ **悬浮指引条**：抢购时在淘宝上实时显示当前阶段
+- ✅ **日志导出**（诊断报告，便于排查求助）+ **检查更新**
+- ✅ 浅色/深色主题（跟随系统/手动）
 
-✅ 支持淘宝/京东双平台抢购
-✅ 现代化 Web 界面，实时日志显示
-✅ 驱动自动下载检测，无需手动配置
-✅ 步骤式进度条，用户完全手动控制
-✅ 无侵入式网页操作，安全稳定
-⚠️ 注意：仅支持可添加购物车/进入提交订单页的商品，需手动完成付款步骤
+### 快速上手
+1. **下载安装** APK（见上方 Releases 链接）。
+2. 打开 AutoBuy → **「指引」页**按步骤准备：
+   - 点「去开启」，在系统设置里打开 **AutoBuy 抢购服务**（无障碍，必需）；
+   - 可选：点「去授权」开启**悬浮指引**。
+3. 在**淘宝/京东里登录**，把要抢的商品**加入购物车**（预约/预售商品请先完成预约）。
+4. 回到 AutoBuy 的**「抢购」页**：选平台 → 设抢购时间（可用「今天 12:00」快捷）→ 点**开始抢购**。
+5. **切到目标 App 的购物车页**，保持屏幕常亮。到点后 AutoBuy 自动完成下单，你只需**去付款**。
 
-## 🌐 支持平台
+### 注意事项
+- **抢购前请确认 App 内「无障碍服务」显示为已开启**（系统有时会关闭它）；掉了就在系统设置里重新打开。
+- **抢购前不要重装或强制停止 AutoBuy**，否则无障碍会掉线。
+- 请提前几分钟开始，让 App 进入待命。
+- 提交成功后请尽快到「待付款」完成付款。
+- 抢购失败可到 **「日志」页导出诊断日志**（含设备/系统/权限信息）发给作者求助。
 
-- 淘宝移动端网页：[https://main.m.taobao.com/](https://main.m.taobao.com/)
-- 京东移动端网页：[https://m.jd.com/](https://m.jd.com/)
-
-## 🛠️ 环境配置
-
-### 基础环境
-
-| 配置项      | 要求                                    |
-| ----------- | --------------------------------------- |
-| 操作系统    | Windows 10 / Windows 11                 |
-| 开发工具    | PyCharm (Professional) / 任意Python IDE |
-| Python 版本 | >=3.10（推荐 3.13）                     |
-| 浏览器      | Google Chrome（最新版）                 |
-| 包管理器    | uv（推荐）/ pip                         |
-
-### 依赖安装
-
-#### 方式一：使用 uv（推荐）
-
+### 从源码构建
 ```bash
-# 1. 安装 uv（如果尚未安装）
+cd android-native/AutoBuy
+./gradlew :app:assembleDebug      # 调试包
+./gradlew :app:assembleRelease    # 发布包
+```
+需要 Android SDK（platform 35、build-tools 35）与 JDK 17+。详见 [`android-native/AutoBuy/README.md`](android-native/AutoBuy/README.md)。
+
+---
+
+## 💻 电脑网页版（Selenium）
+
+基于 Selenium 驱动 Chrome 网页端，通过 Flask Web 界面控制，用户在浏览器里手动登录并选中购物车商品，程序到点自动提交。
+
+### 环境要求
+| 配置项 | 要求 |
+|--------|------|
+| 操作系统 | Windows 10 / 11 |
+| Python | >=3.10（推荐 3.13） |
+| 浏览器 | Google Chrome（最新版） |
+| 包管理器 | uv（推荐）/ pip |
+
+### 安装与启动
+```bash
+# 使用 uv（推荐）
 pip install uv
-
-# 2. 使用 uv 同步项目依赖
 uv sync
-
-# 3. 激活虚拟环境（uv 自动创建）
-# Windows:
-.venv\Scripts\activate
-# 或使用 uv run:
 uv run python app.py
-```
 
-#### 方式二：使用 pip（兼容）
-
-```bash
-# 1. 创建虚拟环境（推荐）
+# 或使用 pip
 python -m venv venv
-
-# 2. 激活虚拟环境
-# Windows:
 .venv\Scripts\activate
-# Linux/Mac:
-source venv/bin/activate
-
-# 3. 安装依赖
 pip install -r requirements.txt
-```
-
-### 浏览器驱动
-
-项目使用 `webdriver-manager` 自动管理 ChromeDriver，**无需手动下载和配置**。
-
-首次启动 Web 应用时，会自动：
-
-1. 检测 Chrome 浏览器版本
-2. 下载匹配的 ChromeDriver
-3. 显示详细的检查和下载过程日志
-
-> 💡 提示：
->
-> - 驱动下载在页面加载时自动进行，并在实时日志中显示
-> - Chrome 更新后会自动下载新版本驱动
-> - 驱动缓存目录由 webdriver-manager 自动管理
-
-### 启动 Web 应用
-
-```bash
-# 使用 uv 启动
-uv run python app.py
-
-# 或使用 pip 启动
 python app.py
 
 # 启动后访问
 http://localhost:5000
 ```
+Windows 用户也可直接双击 **`start.bat`** 一键启动。
 
-## 🚀 使用教程
-
-### 快速启动（推荐新手）
-
-**Windows 用户双击 `start.bat` 即可自动启动！**
-
-该脚本会自动：
-
-- ✓ 检查 Python 环境
-- ✓ 检查并安装依赖
-- ✓ 检查 Chrome 浏览器
-- ✓ 启动 Web 应用
-
-**注意**：
-
-- 首次启动需要安装依赖，请保持网络连接
-- 启动后浏览器会自动打开 `http://localhost:5000`
-- 请勿关闭黑色命令行窗口，否则服务将停止
-
-### 详细启动步骤
-
-如果使用快速启动脚本遇到问题，可以按照以下步骤手动启动：
-
-#### 1. 安装 Python（如果尚未安装）
-
-- 下载：https://www.python.org/downloads/
-- 安装时勾选 "Add Python to PATH"
-
-#### 2. 安装 Chrome 浏览器（如果尚未安装）
-
-- 下载：https://www.google.com/chrome/
-
-#### 3. 安装依赖
-
-```bash
-   # 使用 uv（推荐）
-   uv sync
-
-   # 或使用 pip
-   pip install -r requirements.txt
-```
-
-#### 4. 启动应用
-
-```bash
-   # 使用 uv
-   uv run python app.py
-
-   # 或使用 pip
-   python app.py
-```
-
-#### 5. 访问应用
-
-- 浏览器打开：`http://localhost:5000`
-
-> ⚠️ 重要提醒：
->
-> - 请提前 5 分钟启动程序！
-> - 程序运行期间请勿关闭窗口
-> - 遇到滑块验证等人工验证需手动完成
+ChromeDriver 由 `webdriver-manager` 自动下载管理，无需手动配置。
 
 ### 使用步骤
+1. 启动应用，浏览器打开 `http://localhost:5000`。
+2. 选择平台（淘宝/京东），设置抢购时间。
+3. 点「开始抢购」→ 程序打开 Chrome → **扫码登录** → 点「确认登录」。
+4. 手动进入购物车、勾选商品 → 点「确认购物车」。
+5. 到达设定时间自动提交订单；在浏览器中手动完成付款。
 
-1. **启动应用**
+> 重要：请提前 5 分钟启动；运行期间勿关闭窗口；遇到滑块验证需手动完成。
 
-   - 双击 `start.bat`（Windows）或按照上面的步骤手动启动
-2. **访问应用**
+### 命令行模式
+```bash
+uv run python seckill.py jd --time "2025-03-19 11:00:00.000000"
+uv run python seckill.py tb --time "2025-03-19 11:00:00.000000"
+```
 
-   - 浏览器会自动打开 `http://localhost:5000`
-   - 页面加载时会自动检查并下载 ChromeDriver（在日志中查看进度）
-3. **选择平台**
+### 注意事项
+- 仅支持可加入购物车/进入提交订单页的商品，需手动完成付款。
+- 部分商品有平台风控限制，抢购成功率不保证。
+- Web 界面会自动移除淘宝的反爬虫遮罩层。
 
-   - 在页面左侧选择淘宝或京东
-4. **设置抢购时间**
+---
 
-   - 京东：必须设置具体的抢购时间
-   - 淘宝：可选设置时间，也可直接开始
-5. **开始抢购流程**
-
-   - 点击「开始抢购」按钮
-   - 程序会打开 Chrome 浏览器
-   - 扫码登录后，点击界面上的「确认登录」按钮
-   - 手动进入购物车，选中商品后点击「确认购物车」按钮
-   - 到达设定时间自动点击提交订单
-   - 在浏览器中手动输入密码完成付款
-   - 任务完成后点击「关闭浏览器」按钮
-6. **查看进度**
-
-   - 实时日志：页面底部显示所有操作日志
-   - 进度条：显示当前抢购阶段（驱动检查→登录确认→购物车确认→执行抢购→抢购完成）
-
-## ⚠️ 注意事项
-
-1. 浏览器需保持最新版本，webdriver-manager 会自动匹配驱动版本；遇到驱动下载失败的，可以尝试刷新网页或者检查网络。
-2. 抢购时间建议提前校准电脑系统时间（避免网络延迟）
-3. Web 界面会自动移除淘宝的反爬虫遮罩层
-4. 若遇到网页加载缓慢，可手动刷新页面（不影响定时逻辑）
-5. 本工具仅用于学习交流，请勿用于恶意抢购或商业用途
-6. 部分商品可能有平台风控限制，抢购成功率不保证
-7. 使用 Web 界面时，请勿关闭浏览器窗口或刷新页面
-8. 浏览器窗口会自动定位到屏幕右侧，避免遮挡前端界面
-
-## 📱 相关项目
-
-- **原生 Android App（推荐）**：`android-native/AutoBuy` —— Kotlin + Jetpack Compose + Material 3，
-  基于**无障碍服务 + 图像识别**自动化淘宝/京东**官方 App**，含底部导航、步骤指引、日志导出、检查更新。
-  安装包见 [Releases](https://github.com/HanphoneJan/AutoBuy/releases)。
-- **Auto.js 原型**：`android/` —— 早期用 Auto.js 验证安卓无障碍链路的原型。
+## 📂 仓库结构
+```
+AutoBuy/
+├── android-native/AutoBuy/   # 📱 原生 Android App（Kotlin + Compose + Material 3）— 推荐
+├── android/                  # 早期 Auto.js 原型（已验证安卓无障碍链路）
+├── app.py / seckill.py       # 💻 电脑网页版（Selenium）
+├── static/ templates/        # 网页版前端
+└── README.md
+```
 
 ## 🐛 问题反馈
-
-若使用过程中遇到bug或有功能建议，欢迎通过以下方式反馈：
-
-- GitHub Issues：[https://github.com/HanphoneJan/AutoBuy/issues](https://github.com/HanphoneJan/AutoBuy/issues)
+- GitHub Issues：https://github.com/HanphoneJan/AutoBuy/issues
+- 安卓 App 用户请尽量附上 **「日志」页导出的诊断日志**，便于定位。
 
 ---
 
@@ -218,8 +129,8 @@ http://localhost:5000
 
 <a href="https://www.star-history.com/?repos=HanphoneJan%2FAutoBuy&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=HanphoneJan/AutoBuy&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=HanphoneJan/AutoBuy&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=HanphoneJan/AutoBuy&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=HanphoneJan%2FAutoBuy&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=HanphoneJan%2FAutoBuy&type=date&theme=light&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=HanphoneJan%2FAutoBuy&type=date&legend=top-left" />
  </picture>
 </a>
