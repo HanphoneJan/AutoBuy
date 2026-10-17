@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.Point
 import android.os.Build
 import com.autobuy.app.accessibility.AutoBuyAccessibilityService
 import com.autobuy.app.core.ImageMatcher
@@ -19,9 +20,10 @@ import java.util.Locale
  *
  *  准备  校准网络时间，等到 T-navigateLead 开始就位
  *  就位  自动切到购物车 → 图像识别勾选目标商品 → 点「结算/去结算」→ 进入确认订单页
- *  刷新  在确认订单页用「号码保护」开关刷新订单状态（低频可控）
- *  提交  到点快速点击「提交订单 / 立即支付」；
- *        未在确认页则重新就位，未开售则重进结算页刷新，直到成功或超出窗口
+ *  刷新  开卖前 5 秒起，在确认订单页用「号码保护」开关刷新订单状态
+ *  提交  到点快速点击「提交订单 / 立即支付」；显示未开售时留在确认页继续用
+ *        「号码保护」刷新开卖状态，不退回购物车重进（重进会错过开卖瞬间），
+ *        直到成功或超出窗口
  *
  * 淘宝：购物车/确认页为 Weex，图像识别；提交按钮 content-desc。
  * 京东：购物车为自绘视图，图像识别；普通订单确认页有「号码保护」开关。
@@ -37,6 +39,13 @@ class SeckillEngine(private val context: Context) {
 
     private val settleRegion = floatArrayOf(0.55f, 0.82f, 1.0f, 0.97f)
     private val checkboxRegion = floatArrayOf(0.035f, 0.10f, 0.10f, 0.88f)
+
+    /** 点完提交后多久之内离开确认页才算「提交成功跳转」：避免把页面加载中误判为已提交 */
+    private val leaveConfirmGraceMs = 5_000L
+    /** 进/回结算页后等待确认页就绪的上限 */
+    private val confirmReadyWaitMs = 3_000L
+    /** 开卖前多久开始用「号码保护」刷新（不提前太久，避免长时间高频切换） */
+    private val refreshLeadMs = 5_000L
 
     private val privacyKeywords = listOf("号码保护", "隐私号码", "隐私保护")
     private val submitKeywords = listOf("立即支付", "提交订单")
@@ -98,16 +107,23 @@ class SeckillEngine(private val context: Context) {
         refreshUntilTarget(a11y, config, ::now)
 
         LogBus.setStage(Stage.SUBMIT)
-        if (submitWithRetry(a11y, config, ::now, pkg, checkboxTemplate, settleText, settleColor)) {
-            LogBus.add("已提交，正在回查订单...")
-            LogBus.setStage(Stage.VERIFY)
-            val verified = verifyOrder(a11y, config.platform, config.keyword)
-            LogBus.add(if (verified) "回查通过：已进入支付/待付款，请尽快付款" else "回查未确认，请手动到「待付款」核对")
-            LogBus.setStage(Stage.DONE)
-        } else {
+        val submitted = submitWithRetry(a11y, config, ::now, pkg, checkboxTemplate, settleText, settleColor)
+        if (!submitted) {
+            // 一次提交都没点成，订单不可能存在，不必再去订单列表折腾
             LogBus.add("未能确认提交，请手动检查")
-            LogBus.setStage(Stage.VERIFY)
+            LogBus.setStage(Stage.DONE)
+            return
         }
+        LogBus.setStage(Stage.VERIFY)
+        LogBus.add("已提交，正在回查订单...")
+        var verified = verifyOrder(a11y, config.platform, config.keyword)
+        if (!verified) {
+            // 订单列表有延迟，补一次回查再下结论
+            delay(2000)
+            verified = verifyOrder(a11y, config.platform, config.keyword)
+        }
+        LogBus.add(if (verified) "回查通过：已进入支付/待付款，请尽快付款" else "回查未确认，请手动到「待付款」核对")
+        LogBus.setStage(Stage.DONE)
     }
 
     /**
@@ -220,12 +236,17 @@ class SeckillEngine(private val context: Context) {
         return false
     }
 
-    /** 在确认订单页用「号码保护」开关刷新，直到目标时间。 */
+    /** 在确认订单页用「号码保护」开关刷新，直到目标时间；开卖前 5 秒才开始刷新。 */
     private suspend fun refreshUntilTarget(
         a11y: AutoBuyAccessibilityService,
         config: SeckillConfig,
         now: () -> Long
     ) {
+        val startAt = config.targetTimeMs - refreshLeadMs
+        if (now() < startAt) {
+            LogBus.add("确认订单页已就位，开卖前 5 秒开始刷新（还有 ${(startAt - now()) / 1000}s）")
+            while (now() < startAt) delay(50)
+        }
         val hasPrivacy = a11y.hasDesc(privacyKeywords, contains = true) ||
             a11y.hasText(privacyKeywords, contains = true)
         if (!hasPrivacy) {
@@ -233,7 +254,7 @@ class SeckillEngine(private val context: Context) {
             while (now() < config.targetTimeMs) delay(50)
             return
         }
-        LogBus.add("开始用「号码保护」刷新订单状态（间隔 ${config.refreshIntervalMs}ms，略快于手动）")
+        LogBus.add("开始用「号码保护」刷新订单状态（间隔 ${config.refreshIntervalMs}ms）")
         var count = 0
         while (now() < config.targetTimeMs) {
             a11y.toggleByTextOrDesc(privacyKeywords, timeoutMs = 150)
@@ -246,9 +267,11 @@ class SeckillEngine(private val context: Context) {
 
     /**
      * 到点提交：快速连点提交按钮；
-     *  - 不在确认页 → 快速重新就位（预约商品到点才可选）；
-     *  - 在确认页但未开售 → 退回购物车重进结算页刷新；
-     * 直到成功或超出窗口。
+     *  - 在确认页但显示「未开售」→ 留在确认页用「号码保护」刷新开卖状态后继续点，
+     *    绝不退回购物车重进（重进要 2~3s，会正好错过开卖瞬间）；
+     *  - 只有「本轮从没进过确认页」且持续 4s 不在确认页，才做一次快速就位；
+     *  - 只有按钮可用（非「未开售/￥0」）的点击，才作为提交成功判据；
+     * 直到成功或超出窗口（窗口内不会提前结束）。
      */
     private suspend fun submitWithRetry(
         a11y: AutoBuyAccessibilityService,
@@ -260,33 +283,91 @@ class SeckillEngine(private val context: Context) {
         settleColor: Int
     ): Boolean {
         val deadline = config.targetTimeMs + config.windowSeconds * 1000L
-        var reenter = 0
         var reachedConfirm = false
+        var lastNavAt = 0L
+        var offConfirmSince = 0L
+        var submitClicks = 0
+        var validSubmitAt = 0L
+        var refreshCount = 0
+        var nextRefreshAt = 0L
+
         while (now() < deadline) {
             if (!a11y.hasDesc(submitKeywords, contains = true)) {
-                // 曾到过确认页、现在离开 → 视为已提交
-                if (reachedConfirm) return true
-                navigateToConfirm(a11y, pkg, checkboxTemplate, settleText, settleColor, pkgWaitSeconds = 3, fast = true)
-                if (a11y.hasDesc(submitKeywords, contains = true)) reachedConfirm = true
+                // 按钮可用时点过提交、之后离开确认页 → 提交成功跳转
+                if (validSubmitAt > 0 && now() - validSubmitAt <= leaveConfirmGraceMs) return true
+                // 持续不在确认页：只有本轮从没进过确认页才重新就位；
+                // 进过确认页就说明是页面自己走了（正在跳转/已提交），留在原地等，不退回购物车
+                if (offConfirmSince == 0L) offConfirmSince = now()
+                if (!reachedConfirm && now() - offConfirmSince >= 4_000 && now() - lastNavAt > 3_000) {
+                    lastNavAt = now()
+                    offConfirmSince = 0L
+                    LogBus.add("持续不在确认页，尝试快速就位...")
+                    navigateToConfirm(a11y, pkg, checkboxTemplate, settleText, settleColor, pkgWaitSeconds = 3, fast = true)
+                    waitForConfirm(a11y, confirmReadyWaitMs)
+                }
+                delay(150)
                 continue
             }
             reachedConfirm = true
-            val notOnSale = a11y.hasDesc(notOnSaleKeywords, contains = true)
-            if (notOnSale && reenter < 12) {
-                reenter++
-                LogBus.add("商品尚未开售，重新进入结算页刷新（第 $reenter 次）...")
-                a11y.back()
-                delay(500)
-                a11y.clickByTextOrDesc(listOf("购物车"), contains = true, timeoutMs = 600)
-                delay(500)
-                clickSettle(a11y, settleText, settleColor, System.currentTimeMillis() + 2000)
-                delay(600)
-                continue
+            offConfirmSince = 0L
+
+            // 1) 点提交：文字/描述优先，取不到描述用颜色兜底
+            if (clickSubmit(a11y, submitKeywords, settleColor)) {
+                submitClicks++
+                if (submitClicks == 1 || submitClicks % 10 == 0) LogBus.add("点击提交（第 $submitClicks 次）")
+                // 按钮可用（不是「未开售/￥0」）才算有效提交
+                if (!a11y.hasDesc(notOnSaleKeywords, contains = true)) {
+                    validSubmitAt = now()
+                    if (!a11y.hasDesc(submitKeywords, contains = true)) return true
+                }
             }
-            a11y.clickByTextOrDesc(submitKeywords, contains = true, timeoutMs = 150)
+
+            // 2) 仍显示未开售 → 留在确认页用「号码保护」刷新开卖状态，不离开页面
+            if (a11y.hasDesc(notOnSaleKeywords, contains = true)) {
+                if (now() >= nextRefreshAt) {
+                    a11y.toggleByTextOrDesc(privacyKeywords, timeoutMs = 150)
+                    refreshCount++
+                    nextRefreshAt = now() + config.refreshIntervalMs
+                    if (refreshCount == 1 || refreshCount % 10 == 0) LogBus.add("未开售，已刷新开卖状态 $refreshCount 次")
+                }
+            } else {
+                nextRefreshAt = now()
+            }
             delay(150)
         }
-        return reachedConfirm && !a11y.hasDesc(submitKeywords, contains = true)
+        LogBus.add("提交窗口结束（共点击提交 $submitClicks 次，刷新 $refreshCount 次）")
+        // 窗口结束时点过提交且已离开确认页，仍按成功处理，交回查确认
+        return submitClicks > 0 && !a11y.hasDesc(submitKeywords, contains = true)
+    }
+
+    /** 点一次提交：文字/描述优先，取不到描述用颜色兜底（淘宝 Weex 提交按钮同为橙色、同在右下）。 */
+    private suspend fun clickSubmit(
+        a11y: AutoBuyAccessibilityService,
+        keywords: List<String>,
+        settleColor: Int
+    ): Boolean {
+        if (a11y.clickByTextOrDesc(keywords, contains = true, timeoutMs = 150)) return true
+        val p = findColorCentroid(a11y, settleColor) ?: return false
+        a11y.tap(p.x.toFloat(), p.y.toFloat())
+        return true
+    }
+
+    /** 等待确认订单页就绪（出现「提交订单/立即支付」）；就绪返回 true。 */
+    private suspend fun waitForConfirm(a11y: AutoBuyAccessibilityService, timeoutMs: Long): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            if (a11y.hasDesc(submitKeywords, contains = true)) return true
+            delay(120)
+        }
+        return false
+    }
+
+    /** 按颜色找右下角的提交按钮（截图失败返回 null）。 */
+    private fun findColorCentroid(a11y: AutoBuyAccessibilityService, color: Int): Point? {
+        val shot = screenshot(a11y) ?: return null
+        val p = ImageMatcher.findColorCentroid(shot, settleRegion, color, 70)
+        shot.recycle()
+        return p
     }
 
     private suspend fun stepTemplate(
