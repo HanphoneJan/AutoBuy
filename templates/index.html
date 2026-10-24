@@ -44,10 +44,10 @@
                     <li>点击"开始抢购"按钮</li>
                     <li>在弹出的浏览器中扫码登录京东账号</li>
                     <li>登录完成后，点击页面上的"确认登录"按钮</li>
-                    <li>填写京东商品关键词，用于定位购物车中的目标商品</li>
+                    <li>填写商品关键词，用于自动定位购物车中的目标商品（可不填）</li>
                     <li>手动进入购物车，确认目标商品可见</li>
                     <li>预约阶段无法勾选是正常现象，直接点击页面上的"确认购物车"</li>
-                    <li>到达抢购时间后，系统自动勾选、结算并提交订单</li>
+                    <li>到达抢购时间后，系统自动刷新、勾选、结算并提交订单</li>
                 </ol>
             </div>
             <div class="sidebar-instructions" id="tbInstructions">
@@ -57,9 +57,10 @@
                     <li>点击"开始抢购"按钮</li>
                     <li>在弹出的浏览器中登录淘宝账号</li>
                     <li>登录完成后，点击页面上的"确认登录"按钮</li>
-                    <li>手动进入购物车，勾选需要抢购的商品，点击结算按钮进入结算界面</li>
+                    <li>填写商品关键词，用于自动定位购物车中的目标商品（可不填）</li>
+                    <li>手动进入购物车，确认目标商品可见（未开售/预约商品现在无法勾选，属正常现象）</li>
                     <li>点击页面上的"确认购物车"按钮</li>
-                    <li>等待到达抢购时间，系统自动点击结算和提交订单</li>
+                    <li>到达抢购时间后，系统自动刷新购物车、勾选目标商品、结算并提交订单</li>
                 </ol>
             </div>
             <div class="sidebar-footer">
@@ -112,12 +113,12 @@
                                 <option value="900">900</option>
                             </select>
                         </div>
-                        <div class="form-group" id="jdKeywordGroup" style="min-width: 240px; display: none;">
-                            <label for="jdProductKeyword">京东商品关键词</label>
+                        <div class="form-group" id="productKeywordGroup" style="min-width: 240px;">
+                            <label for="productKeyword">商品关键词（自动勾选）</label>
                             <input
                                 type="text"
-                                id="jdProductKeyword"
-                                placeholder="例如：品牌 型号 套装"
+                                id="productKeyword"
+                                placeholder="可不填，留空默认勾选购物车最上方商品"
                             >
                         </div>
                     </div>
@@ -244,16 +245,13 @@
             const platform = document.querySelector('input[name="platform"]:checked').value;
             const jdInstructions = document.getElementById('jdInstructions');
             const tbInstructions = document.getElementById('tbInstructions');
-            const jdKeywordGroup = document.getElementById('jdKeywordGroup');
 
             if (platform === 'jd') {
                 jdInstructions.style.display = 'block';
                 tbInstructions.style.display = 'none';
-                if (jdKeywordGroup) jdKeywordGroup.style.display = 'block';
             } else if (platform === 'tb') {
                 jdInstructions.style.display = 'none';
                 tbInstructions.style.display = 'block';
-                if (jdKeywordGroup) jdKeywordGroup.style.display = 'none';
             }
         }
 

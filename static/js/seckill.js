@@ -116,7 +116,7 @@ async function startTask() {
             return;
         }
         const productKeyword = (
-            document.getElementById('jdProductKeyword')?.value || ''
+            document.getElementById('productKeyword')?.value || ''
         ).trim();
 
         try {
@@ -137,7 +137,7 @@ async function startTask() {
                 currentTaskId = data.task_id;
                 sessionStorage.setItem('autobuyTaskId', currentTaskId);
                 sessionStorage.setItem('autobuyPlatform', currentPlatform);
-                sessionStorage.setItem('autobuyJdProductKeyword', productKeyword);
+                sessionStorage.setItem('autobuyProductKeyword', productKeyword);
                 document.getElementById('startBtn').disabled = true;
                 document.getElementById('stopBtn').disabled = false;
                 disableTimeInputs(true);
@@ -156,6 +156,9 @@ async function startTask() {
         if (!targetTime) {
             return;
         }
+        const productKeyword = (
+            document.getElementById('productKeyword')?.value || ''
+        ).trim();
 
         try {
             const response = await fetch('/api/tb/start', {
@@ -163,7 +166,10 @@ async function startTask() {
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ target_time: targetTime })
+                body: JSON.stringify({
+                    target_time: targetTime,
+                    product_keyword: productKeyword
+                })
             });
 
             const data = await response.json();
@@ -172,6 +178,7 @@ async function startTask() {
                 currentTaskId = data.task_id;
                 sessionStorage.setItem('autobuyTaskId', currentTaskId);
                 sessionStorage.setItem('autobuyPlatform', currentPlatform);
+                sessionStorage.setItem('autobuyProductKeyword', productKeyword);
                 document.getElementById('startBtn').disabled = true;
                 document.getElementById('stopBtn').disabled = false;
                 disableTimeInputs(true);
@@ -434,7 +441,7 @@ function disableTimeInputs(disabled) {
         'targetMinute',
         'targetSecond',
         'targetMicrosecond',
-        'jdProductKeyword'
+        'productKeyword'
     ];
     inputs.forEach(id => {
         const el = document.getElementById(id);
@@ -478,7 +485,7 @@ function resetUI() {
     currentTaskId = null;
     sessionStorage.removeItem('autobuyTaskId');
     sessionStorage.removeItem('autobuyPlatform');
-    sessionStorage.removeItem('autobuyJdProductKeyword');
+    sessionStorage.removeItem('autobuyProductKeyword');
 }
 
 async function restoreTask() {
@@ -524,11 +531,11 @@ async function restoreTask() {
             `input[name="platform"][value="${currentPlatform}"]`
         );
         if (platformRadio) platformRadio.checked = true;
-        const keywordInput = document.getElementById('jdProductKeyword');
+        const keywordInput = document.getElementById('productKeyword');
         if (keywordInput) {
             keywordInput.value = (
                 data.product_keyword ||
-                sessionStorage.getItem('autobuyJdProductKeyword') ||
+                sessionStorage.getItem('autobuyProductKeyword') ||
                 ''
             );
         }

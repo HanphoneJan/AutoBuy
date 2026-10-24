@@ -409,9 +409,12 @@ class SeckillWorker:
         # 使用字典来存储确认状态，避免属性访问问题
         self._confirm_states = {}
         self.log_callback: Callable[[str], None] = log_callback or logger.info
-        # 京东预约商品在开售前无法勾选。按商品标题定位，避免误选购物车中的其他商品。
-        self.jd_product_keyword = (
-            product_keyword or os.environ.get("JD_PRODUCT_KEYWORD", "")
+        # 购物车自动勾选的目标商品关键字；留空时勾选购物车最上方的商品。
+        # 京东预约商品在开售前无法勾选，同样按商品标题定位，避免误选其他商品。
+        self.product_keyword = (
+            product_keyword
+            or os.environ.get("AUTOBUY_PRODUCT_KEYWORD", "")
+            or os.environ.get("JD_PRODUCT_KEYWORD", "")
         ).strip()
         # 抢购前记录的待付款订单基线，用于提交成功后的订单列表交叉验证
         self._order_baseline: int | None = None
@@ -636,6 +639,214 @@ class SeckillWorker:
         except Exception:
             return None
 
+    # 购物车复选框选择器：平台改版后结构差异较大，尽量覆盖常见的几种写法。
+    CART_CHECKBOX_SELECTORS = {
+        'jd': (
+            'input[type="checkbox"], [role="checkbox"], label[class*="check"], '
+            '[class*="checkbox"], [class*="check-box"], [class*="jdcheckbox"], '
+            '[class*="cart-checkbox"], [class*="select"]'
+        ),
+        'tb': (
+            'input[type="checkbox"], [role="checkbox"], '
+            'label[class*="checkbox"], [class*="checkbox"], [class*="check-box"], '
+            '.ant-checkbox-input, .ant-checkbox-wrapper'
+        ),
+    }
+
+    # 按关键字定位购物车商品复选框；未设置关键字时取最上方可勾选的商品。
+    CART_CHECKBOX_SCRIPT = """
+        const keyword = (arguments[0] || '').toLowerCase();
+        const selector = arguments[1];
+        const visible = (el) => {
+            if (!el) return false;
+            const rect = el.getBoundingClientRect();
+            const style = getComputedStyle(el);
+            return rect.width > 0 && rect.height > 0 &&
+                style.display !== 'none' && style.visibility !== 'hidden';
+        };
+        const textOf = (el) => (
+            (el.innerText || '') + ' ' + (el.getAttribute('aria-label') || '')
+        ).replace(/\\s+/g, ' ').trim().toLowerCase();
+        const isSelectAll = (el) => {
+            if (textOf(el).includes('全选')) return true;
+            const meta = [
+                el.id || '',
+                el.name || '',
+                el.getAttribute('aria-label') || '',
+                String(el.className || '')
+            ].join(' ').toLowerCase();
+            if (/(^|[\\s_-])(all|selectall|checkall)([\\s_-]|$)/.test(meta)) return true;
+            const label = el.closest('label');
+            return label ? textOf(label).includes('全选') : false;
+        };
+        const inRow = (el) => {
+            const row = el.closest('li, tr, .cart-item, [class*="item"], [class*="row"]');
+            return row ? visible(row) : true;
+        };
+        const candidates = Array.from(document.querySelectorAll(selector))
+            .filter((el) => visible(el) && !isSelectAll(el));
+        const usable = candidates.filter(inRow);
+
+        if (!keyword) {
+            return usable.length ? usable[0] : (candidates.length ? candidates[0] : null);
+        }
+
+        const rows = Array.from(document.querySelectorAll('div, li, tr, section'))
+            .filter((el) => {
+                const rect = el.getBoundingClientRect();
+                return visible(el) && rect.width > 300 && rect.height >= 50 &&
+                    rect.height <= 600 && textOf(el).includes(keyword);
+            })
+            .sort((a, b) => a.getBoundingClientRect().height - b.getBoundingClientRect().height);
+        for (const row of rows) {
+            let scope = row;
+            for (let i = 0; i < 8 && scope; i++, scope = scope.parentElement) {
+                const found = Array.from(scope.querySelectorAll(selector))
+                    .filter((el) => visible(el) && !isSelectAll(el));
+                if (found.length) return found[0];
+            }
+        }
+        return null;
+    """
+
+    # 读取复选框的勾选/禁用状态（兼容 input、aria 与 class 三种标记）。
+    CART_CHECKBOX_STATE_SCRIPT = """
+        const el = arguments[0];
+        const classesOf = (node) => ((node && node.className)
+            ? String(node.className).split(/\\s+/)
+            : []);
+        const marked = (node) => classesOf(node).some((cls) =>
+            /^(checked|selected)$/i.test(cls) ||
+            /(^|[-_])(checked|selected)$/i.test(cls)
+        );
+        const inner = el ? el.querySelector('input[type="checkbox"]') : null;
+        const disabled = Boolean(
+            el.disabled ||
+            el.getAttribute('aria-disabled') === 'true' ||
+            classesOf(el).some((cls) =>
+                /^(disabled|unable|sold-?out)$/i.test(cls)
+            ) ||
+            (el.parentElement && classesOf(el.parentElement).some((cls) =>
+                /^(disabled|unable|sold-?out)$/i.test(cls)
+            ))
+        );
+        const selected = Boolean(
+            el.checked ||
+            el.getAttribute('aria-checked') === 'true' ||
+            marked(el) ||
+            (el.parentElement && marked(el.parentElement)) ||
+            (inner && inner.checked)
+        );
+        return { disabled: disabled, selected: selected };
+    """
+
+    def _find_cart_checkbox(self):
+        """定位购物车中目标商品的复选框；找不到返回 None。"""
+        if not self.driver:
+            return None
+        selector = self.CART_CHECKBOX_SELECTORS.get(self.platform)
+        if not selector:
+            return None
+        try:
+            return self.driver.execute_script(
+                self.CART_CHECKBOX_SCRIPT,
+                self.product_keyword,
+                selector
+            )
+        except Exception:
+            return None
+
+    def _cart_checkbox_state(self, checkbox) -> dict[str, bool]:
+        """读取复选框状态，读取失败按「未勾选、未禁用」处理。"""
+        if not self.driver or checkbox is None:
+            return {'disabled': False, 'selected': False}
+        try:
+            state = self.driver.execute_script(
+                self.CART_CHECKBOX_STATE_SCRIPT, checkbox
+            ) or {}
+            return {
+                'disabled': bool(state.get('disabled')),
+                'selected': bool(state.get('selected')),
+            }
+        except Exception:
+            return {'disabled': False, 'selected': False}
+
+    def _auto_check_cart_item(self, retries: int = 2) -> tuple[bool, str]:
+        """
+        勾选购物车目标商品，点完立即校验勾选状态，未生效则重试（issue #21）。
+
+        返回 (是否已勾选, 状态)：
+          already / checked — 已勾选（原本已选 / 本次勾选成功）
+          missing — 没定位到目标商品复选框
+          disabled — 商品存在但还不可勾选（未开售/预约未解锁）
+          unchecked — 点击后勾选状态仍未生效
+        """
+        for _ in range(max(1, retries)):
+            checkbox = self._find_cart_checkbox()
+            if checkbox is None:
+                return False, 'missing'
+
+            state = self._cart_checkbox_state(checkbox)
+            if state['selected']:
+                return True, 'already'
+            if state['disabled']:
+                return False, 'disabled'
+
+            self._click_element_safely(checkbox)
+            time.sleep(0.15)
+
+            # 点击后重新定位：购物车的 DOM 可能整体重绘，旧元素会失效
+            refreshed = self._find_cart_checkbox()
+            if refreshed is not None and self._cart_checkbox_state(refreshed)['selected']:
+                return True, 'checked'
+
+            # 有些改版把复选框做成不可直接点击的图标，改点外层 label/wrapper 再校验
+            if refreshed is not None and self.driver:
+                try:
+                    self.driver.execute_script(
+                        "const el = arguments[0];"
+                        " const target = el.closest('label, [role=\"checkbox\"], [class*=\"checkbox\"]')"
+                        " || el.parentElement || el;"
+                        " target.click();",
+                        refreshed,
+                    )
+                except Exception:
+                    pass
+                time.sleep(0.12)
+                after = self._find_cart_checkbox()
+                if after is not None and self._cart_checkbox_state(after)['selected']:
+                    return True, 'checked'
+
+        return False, 'unchecked'
+
+    @staticmethod
+    def _cart_state_text(reason: str) -> str:
+        """把勾选状态转成日志文案。"""
+        return {
+            'missing': '未定位到目标商品复选框',
+            'disabled': '目标商品尚未解锁',
+            'unchecked': '目标商品勾选未生效',
+            'already': '目标商品已勾选',
+            'checked': '目标商品已勾选',
+        }.get(reason, '目标商品暂不可勾选')
+
+    def _refresh_cart_page(self):
+        """刷新购物车：开售后商品状态（预约/未开售）只有刷新才会更新。"""
+        if not self.driver:
+            return
+        try:
+            self.driver.refresh()
+        except TimeoutException:
+            try:
+                self.driver.execute_script("window.stop();")
+            except Exception:
+                pass
+        self._wait_for_document_ready()
+        try:
+            self.driver.execute_script(BrowserManager.OVERLAY_REMOVAL_SCRIPT)
+        except Exception:
+            pass
+
     def _wait_for_document_ready(self, timeout: float = 5.0):
         if not self.driver:
             return
@@ -796,7 +1007,12 @@ class SeckillWorker:
         return False
 
     def _perform_tb_seckill(self, max_wait_seconds: float = 75):
-        """淘宝：根据当前页面状态执行购物车结算或确认页提交。"""
+        """
+        淘宝：停留在购物车时自动刷新、勾选目标商品再结算；已在确认页则直接提交。
+
+        开售后购物车里的商品状态需要刷新才会更新，因此「刷新 → 勾选 → 校验 → 重试」
+        循环进行，只有勾选成功才点结算（issue #21）。
+        """
         if not self._ensure_active_window():
             return False
 
@@ -804,6 +1020,10 @@ class SeckillWorker:
         deadline = time.monotonic() + max_wait_seconds
         last_status_log = 0.0
         clicked_submit = False
+        checked_logged = False
+        next_refresh_at = 0.0
+        refresh_count = 0
+        checkout_clicks = 0
 
         while self.running and self.driver and time.monotonic() < deadline:
             try:
@@ -844,12 +1064,48 @@ class SeckillWorker:
                                 clicked_submit = True
                             time.sleep(0.4)
                             continue
-                elif 'cart.taobao.com' in current_url:
-                    checkout = self._find_action_button('checkout')
-                    if checkout and self._click_element_safely(checkout):
-                        self.log("已点击淘宝结算，等待进入确认订单页...")
-                        time.sleep(0.5)
-                        continue
+                elif 'cart.taobao.com' in current_url or 'cart.tmall.com' in current_url:
+                    checked, reason = self._auto_check_cart_item()
+                    now = time.monotonic()
+                    if checked and not checked_logged:
+                        tip = (
+                            f"（关键词：{self.product_keyword}）"
+                            if self.product_keyword else ""
+                        )
+                        self.log(f"已自动勾选目标商品{tip}")
+                        checked_logged = True
+                    elif not checked:
+                        checked_logged = False
+
+                    # 勾选成功才结算；未设关键词时（用户可能已手动勾选）沿用「结算按钮可用就点」
+                    if checked or not self.product_keyword:
+                        checkout = self._find_action_button('checkout')
+                        if checkout and self._click_element_safely(checkout):
+                            checkout_clicks += 1
+                            if checkout_clicks == 1 or checkout_clicks % 10 == 0:
+                                self.log("已点击淘宝结算，等待进入确认订单页...")
+                            time.sleep(0.5)
+                            continue
+
+                    if checked:
+                        if now - last_status_log >= 5:
+                            self.log("目标商品已勾选，等待结算按钮可用...")
+                            last_status_log = now
+                    elif now >= next_refresh_at:
+                        # 状态只有刷新后才会更新：未勾选成功就刷新再重试；
+                        # 长时间没解锁就放慢刷新频率，避免高频刷新触发风控
+                        next_refresh_at = now + (1.5 if refresh_count < 10 else 5.0)
+                        refresh_count += 1
+                        self.log(
+                            f"{self._cart_state_text(reason)}，"
+                            f"刷新购物车后重试勾选（第 {refresh_count} 次）"
+                        )
+                        self._refresh_cart_page()
+                    elif now - last_status_log >= 5:
+                        self.log(
+                            f"等待目标商品可勾选：{self._cart_state_text(reason)}"
+                        )
+                        last_status_log = now
                 else:
                     # 页面 URL 改版时仍尝试按按钮文字执行。
                     submit = self._find_action_button('submit')
@@ -876,55 +1132,16 @@ class SeckillWorker:
         return False
 
     def _perform_jd_seckill(self, max_retries: int = 600):
-        """京东预约商品：刷新购物车直到解锁，再勾选、结算并提交。"""
+        """京东：刷新购物车直到解锁，勾选目标商品（可用关键词定位），再结算并提交。"""
         if not self._ensure_active_window():
             return False
 
-        if not self.jd_product_keyword:
-            self.log("请先设置京东商品关键字，用于定位需要抢购的购物车商品")
-            return False
+        keyword_tip = (
+            f"（关键词：{self.product_keyword}）"
+            if self.product_keyword else "（未设置关键词，默认勾选最上方商品）"
+        )
+        self.log(f"开始京东抢购{keyword_tip}")
 
-        self.log(f"开始京东抢购，目标商品关键字：{self.jd_product_keyword}")
-        checkbox_script = """
-            const keyword = (arguments[0] || '').toLowerCase();
-            const visible = (el) => {
-                if (!el) return false;
-                const rect = el.getBoundingClientRect();
-                const style = getComputedStyle(el);
-                return rect.width > 0 && rect.height > 0 &&
-                    style.display !== 'none' && style.visibility !== 'hidden';
-            };
-            const textOf = (el) => (el.innerText || '').replace(/\\s+/g, ' ').trim();
-            const rows = Array.from(document.querySelectorAll('div, li, tr, section'))
-                .filter((el) => {
-                    const rect = el.getBoundingClientRect();
-                    return visible(el) && rect.width > 500 && rect.height >= 80 &&
-                        rect.height <= 500 && textOf(el).toLowerCase().includes(keyword);
-                })
-                .sort((a, b) => a.getBoundingClientRect().height - b.getBoundingClientRect().height);
-
-            for (const row of rows) {
-                const scopes = [];
-                let scope = row;
-                for (let i = 0; i < 8 && scope; i++, scope = scope.parentElement) {
-                    scopes.push(scope);
-                }
-                for (const scope of scopes) {
-                    if (!scope) continue;
-                    const candidates = Array.from(scope.querySelectorAll(
-                        'input[type="checkbox"], [role="checkbox"], label[class*="check"], ' +
-                        '[class*="checkbox"], [class*="check-box"], [class*="jdcheckbox"], ' +
-                        '[class*="cart-checkbox"], [class*="select"]'
-                    )).filter(visible);
-                    for (const candidate of candidates) {
-                        const candidateText = textOf(candidate).toLowerCase();
-                        if (candidateText.includes('全选')) continue;
-                        return candidate;
-                    }
-                }
-            }
-            return null;
-        """
         checkout_script = """
             const visible = (el) => {
                 if (!el) return false;
@@ -981,68 +1198,42 @@ class SeckillWorker:
                 self._wait_for_document_ready()
                 refresh_count += 1
 
-                checkbox = self.driver.execute_script(
-                    checkbox_script,
-                    self.jd_product_keyword
-                )
-                if checkbox:
-                    disabled = self.driver.execute_script(
-                        """
-                        const el = arguments[0];
-                        return Boolean(
-                            el.disabled ||
-                            el.getAttribute('aria-disabled') === 'true' ||
-                            /disabled|unable/.test(String(el.className || '').toLowerCase()) ||
-                            (el.parentElement &&
-                                /disabled|unable/.test(String(el.parentElement.className || '').toLowerCase()))
-                        );
-                        """,
-                        checkbox
-                    )
-                    selected = self.driver.execute_script(
-                        """
-                        const el = arguments[0];
-                        return Boolean(
-                            el.checked ||
-                            el.getAttribute('aria-checked') === 'true' ||
-                            /checked|selected/.test(el.className || '') ||
-                            (el.parentElement && /checked|selected/.test(el.parentElement.className || ''))
-                        );
-                        """,
-                        checkbox
-                    )
-                    if not disabled and not selected:
-                        self._click_element_safely(checkbox)
-                        time.sleep(0.15)
-
-                checkout = self.driver.execute_script(checkout_script)
-                if checkout and self._click_element_safely(checkout):
-                    self.log("已勾选目标商品并点击去结算，等待订单确认页...")
-                    checkout_clicked = True
-                    for _ in range(60):
-                        if not self.driver:
+                checked, reason = self._auto_check_cart_item()
+                if checked or not self.product_keyword:
+                    checkout = self.driver.execute_script(checkout_script)
+                    if checkout and self._click_element_safely(checkout):
+                        self.log(
+                            "已勾选目标商品并点击去结算，等待订单确认页..."
+                            if checked else
+                            "已点击去结算，等待订单确认页..."
+                        )
+                        checkout_clicked = True
+                        for _ in range(60):
+                            if not self.driver:
+                                break
+                            if (
+                                'getOrderInfo' in self.driver.current_url or
+                                self.driver.find_elements(By.CSS_SELECTOR, self.config.submit_button_css)
+                            ):
+                                break
+                            time.sleep(0.15)
+                        if 'getOrderInfo' in self.driver.current_url:
                             break
-                        if (
-                            'getOrderInfo' in self.driver.current_url or
-                            self.driver.find_elements(By.CSS_SELECTOR, self.config.submit_button_css)
-                        ):
-                            break
-                        time.sleep(0.15)
-                    if 'getOrderInfo' in self.driver.current_url:
-                        break
-                    checkout_clicked = False
+                        checkout_clicked = False
 
                 now = time.monotonic()
                 if now - last_state_log >= 5:
                     page_text = self._page_text()
                     if '购物车跑丢了' in page_text:
                         state = "购物车暂时加载为空"
-                    elif checkbox and disabled:
+                    elif reason == 'disabled':
                         state = "目标商品仍未解锁"
-                    elif not checkbox:
+                    elif reason == 'missing':
                         state = "尚未定位到目标商品复选框"
+                    elif not checked:
+                        state = "目标商品勾选未生效"
                     else:
-                        state = "目标商品已出现，等待结算按钮"
+                        state = "目标商品已勾选，等待结算按钮可用"
                     self.log(
                         f"京东已刷新 {refresh_count} 次：{state}，继续重试..."
                     )
@@ -1236,16 +1427,25 @@ class SeckillWorker:
                     self.log("等待购物车确认...")
                     if self.platform == 'jd':
                         target_tip = (
-                            f"目标商品“{self.jd_product_keyword}”"
-                            if self.jd_product_keyword else
+                            f"目标商品“{self.product_keyword}”"
+                            if self.product_keyword else
                             "需要抢购的目标商品"
                         )
                         self.log(
                             f"请停留在京东购物车，并确认{target_tip}可见；"
-                            "预约商品现在无需勾选，开售后程序会自动勾选并结算"
+                            "预约商品现在无需勾选，开售后程序会自动刷新、勾选并结算"
                         )
                     else:
-                        self.log("请手动进入购物车，勾选需要抢购的商品，点击结算按钮进入结算界面")
+                        target_tip = (
+                            f"目标商品“{self.product_keyword}”"
+                            if self.product_keyword else
+                            "需要抢购的商品"
+                        )
+                        self.log(
+                            f"请停留在淘宝购物车，并确认{target_tip}可见"
+                            "（未开售/预约商品现在无法勾选，属正常现象）；"
+                            "开售后程序会自动刷新、勾选、结算并提交"
+                        )
                     self.log("然后点击页面上的'确认购物车'按钮...")
                     if not self._wait_for_user_confirm("cart"):
                         return False

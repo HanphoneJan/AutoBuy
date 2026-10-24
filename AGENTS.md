@@ -119,7 +119,7 @@ Windows 用户可双击 `start.bat`。
 - `PlatformConfig` — 各平台 URL、按钮选择器、购物车地址
 - `BrowserManager` — 驱动创建、反检测（隐藏 `navigator.webdriver`、UA 对齐本机真实 Chrome、持久化用户目录）、遮罩移除脚本注入
 - `TimeManager` — 京东/淘宝服务器时间戳
-- `SeckillWorker` — 流程：建浏览器 → 扫码登录（前端"确认登录"）→ 手动进购物车（"确认购物车"）→ 网络时间卡点 → 循环点结算/提交（300 次，带随机抖动退避）→ `_verify_order_submitted()` 以跳转支付/收银台为硬成功信号，并回查订单列表，避免假成功（#11）
+- `SeckillWorker` — 流程：建浏览器 → 扫码登录（前端"确认登录"）→ 可选商品关键词 + 停留在购物车（"确认购物车"）→ 网络时间卡点 → 自动刷新购物车（淘宝每 1.5s，长时间未解锁放慢到 5s；京东每轮）→ 按关键词（或最上方商品）勾选并校验状态，未勾上就刷新重试（#21）→ 点结算 → 循环点提交（300 次，带随机抖动退避）→ `_verify_order_submitted()` 以跳转支付/收银台为硬成功信号，并回查订单列表，避免假成功（#11）
 
 **前端**：`templates/index.html`（侧边栏 + 时间设置 + 5 步进度条 + 实时日志）、`static/js/seckill.js`（SSE 监听、按日志关键词推进进度条）、`static/css/style.css`。
 
@@ -129,6 +129,7 @@ Windows 用户可双击 `start.bat`。
 - 驱动优先用本地缓存 (`~/.wdm/drivers/chromedriver/win64/`)，匹配本机 Chrome 大版本
 - 浏览器窗口定位屏幕右侧 (`set_window_position(1400, 0)`)
 - 淘宝在购物车确认前不导航，让用户手动进购物车；京东直接导航 `trade.jd.com`
+- 购物车自动勾选：`_auto_check_cart_item()` 按关键词（留空取最上方商品）定位复选框，点击后重新校验 `checked/aria-checked/class`，未生效则重试；`_perform_tb_seckill()` 失败时刷新购物车再勾（开售状态只有刷新才更新）
 - 遮罩移除脚本注入 (`Page.addScriptToEvaluateOnNewDocument`) 并每 500ms 循环
 - CDP 隐藏 `navigator.webdriver`
 

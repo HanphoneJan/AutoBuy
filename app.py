@@ -204,12 +204,16 @@ def start_jd():
 def start_tb():
     data = request.json
     target_time = data.get('target_time')
+    product_keyword = (data.get('product_keyword') or '').strip()
 
     if not target_time:
         return jsonify({'error': '请设置抢购时间'}), 400
 
-    task_id = task_manager.create_task('tb', target_time)
-    thread = threading.Thread(target=run_seckill_task, args=(task_id, 'tb', target_time, 15))
+    task_id = task_manager.create_task('tb', target_time, product_keyword)
+    thread = threading.Thread(
+        target=run_seckill_task,
+        args=(task_id, 'tb', target_time, 15, product_keyword)
+    )
     thread.daemon = True
     thread.start()
 
