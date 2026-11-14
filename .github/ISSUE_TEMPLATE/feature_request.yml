@@ -1,0 +1,45 @@
+name: ✨ 功能建议
+description: 希望支持的平台、流程改进或体验问题
+title: "[建议] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        说清楚「现在怎么用、卡在哪、希望变成什么样」，比一句「求支持 xxx」更容易排期。
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你遇到的问题
+      description: 现在哪里不好用？最好带上具体场景
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 希望怎么改
+      description: 有具体的交互或流程设想可以直接写
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 相关平台
+      options:
+        - 淘宝
+        - 京东
+        - 两个都有
+        - 与平台无关
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 已搜索过现有 issue，没有重复
+          required: true

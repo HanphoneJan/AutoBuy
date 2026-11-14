@@ -121,8 +121,9 @@ AutoBuy/
 ```
 
 ## 🐛 问题反馈
-- GitHub Issues：https://github.com/HanphoneJan/AutoBuy/issues
-- 安卓 App 用户请尽量附上 **「日志」页导出的诊断日志**，便于定位。
+- GitHub Issues：https://github.com/HanphoneJan/AutoBuy/issues/new/choose （已提供必填表单，日志/版本/机型必须填）
+- 不确定是不是 bug、想问怎么用：到 [Discussions](https://github.com/HanphoneJan/AutoBuy/discussions)
+- 安卓 App 用户请在「日志」页点「导出」，把**诊断报告文件直接拖进 issue**；正文只写一句话的 issue 会先打 `needs-info`，7 天没补充自动关闭。
 
 ---
 

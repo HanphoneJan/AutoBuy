@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 使用教程与常见问题
+    url: https://github.com/HanphoneJan/AutoBuy#readme
+    about: 安装、无障碍权限、抢购流程和已知问题，先看 README
+  - name: 💬 使用问题 / 讨论
+    url: https://github.com/HanphoneJan/AutoBuy/discussions
+    about: 不确定是不是 bug、想问怎么用，请到 Discussions

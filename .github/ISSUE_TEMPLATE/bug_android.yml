@@ -1,0 +1,86 @@
+name: 🐞 Android App 问题
+description: 抢购失败、不自动勾选、卡在结算页、闪退等
+title: "[Android] "
+labels: ["bug", "android", "needs-info"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！填完整下面几项，定位会快很多。
+
+        **日志很重要**：App「日志」页 → 右上角「导出」→ 把生成的诊断报告文件直接拖进这个输入框。
+        没有日志的 issue 只能等补充，超过 7 天会自动关闭。
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 抢购平台
+      options:
+        - 淘宝
+        - 京东
+        - 两个都有
+    validations:
+      required: true
+
+  - type: input
+    id: app_version
+    attributes:
+      label: App 版本
+      description: 「我的」→「检查更新」里显示的当前版本
+      placeholder: 例如 v0.3.3
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: 手机型号
+      placeholder: 例如 Xiaomi 14 / Pixel 8
+    validations:
+      required: true
+
+  - type: dropdown
+    id: android_version
+    attributes:
+      label: Android 版本
+      description: 购物车图像识别依赖 Android 11+ 的无障碍截图，10 及以下只能按文字点
+      options:
+        - Android 11 及以上
+        - Android 10 及以下
+        - 不确定
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 越具体越好：几点开始、购物车里几件商品、有没有填商品关键词
+      placeholder: |
+        1. 购物车放入「xxx」，共 2 件商品
+        2. 抢购页设置 14:00:00，关键词填「xxx」
+        3. 到点停留在购物车页
+        4. 结果：……
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志 / 诊断报告
+      description: App「日志」页 →「导出」，把文件拖到这里；也可以直接粘贴关键日志
+      render: shell
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 提交前确认
+      options:
+        - label: App 内无障碍服务显示「已开启」（更新/重装后系统可能把它关掉）
+          required: true
+        - label: 已更新到最新版本，并看过「指引」页的注意事项
+          required: true
+        - label: 已尝试在抢购页填写商品标题关键词
+          required: false
