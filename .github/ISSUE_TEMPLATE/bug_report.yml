@@ -1,0 +1,54 @@
+name: 🐞 反馈问题
+description: 抢不到、没勾选、卡住、报错……简单说下发生了什么就行
+title: "[问题] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        不用懂技术，也不用写代码。**把「发生了什么」说清楚就够了**，看不懂的项直接跳过。
+
+        有截图就拖进输入框；手机 App 用户可以在「日志」页点「导出」，把文件一起拖进来（没有也没关系）。
+
+  - type: dropdown
+    id: client
+    attributes:
+      label: 你用的是哪个？
+      options:
+        - 手机 App（安卓）
+        - 电脑网页版
+        - 两个都用过 / 不确定
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 抢的是哪个平台？
+      options:
+        - 淘宝
+        - 京东
+        - 两个都有
+        - 不确定
+    validations:
+      required: true
+
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: 发生了什么？
+      description: 不用专业术语，像跟朋友描述一样就可以
+      placeholder: |
+        例如：
+        到点后 App 停在购物车，没有帮我勾选商品。
+        或者：日志说下单成功，但淘宝「待付款」里没有订单。
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 补充信息（可选，可以留空）
+      description: 手机型号、系统版本、App 版本、截图、日志，有什么贴什么，不知道怎么找就跳过
+    validations:
+      required: false

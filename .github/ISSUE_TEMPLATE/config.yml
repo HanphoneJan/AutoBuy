@@ -1,4 +1,4 @@
-blank_issues_enabled: false
+blank_issues_enabled: true
 contact_links:
   - name: 📖 使用教程与常见问题
     url: https://github.com/HanphoneJan/AutoBuy#readme

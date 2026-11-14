@@ -1,45 +1,25 @@
-name: ✨ 功能建议
-description: 希望支持的平台、流程改进或体验问题
+name: ✨ 想要新功能
+description: 希望 App 多做什么？一句话也可以
 title: "[建议] "
 labels: ["enhancement"]
 body:
   - type: markdown
     attributes:
       value: |
-        说清楚「现在怎么用、卡在哪、希望变成什么样」，比一句「求支持 xxx」更容易排期。
+        不用写方案，说清楚你希望它帮你做什么就行。
 
   - type: textarea
-    id: problem
+    id: idea
     attributes:
-      label: 你遇到的问题
-      description: 现在哪里不好用？最好带上具体场景
+      label: 你想要什么？
+      description: 说人话就行，比如「希望能支持唯品会」「希望到点自动开始，不用一直看着」
+      placeholder: 例如：希望可以只买购物车里的某一件商品，而不是最上面那件。
     validations:
       required: true
 
   - type: textarea
-    id: proposal
+    id: extra
     attributes:
-      label: 希望怎么改
-      description: 有具体的交互或流程设想可以直接写
+      label: 还有什么想补充的？（可选，可以留空）
     validations:
-      required: true
-
-  - type: dropdown
-    id: platform
-    attributes:
-      label: 相关平台
-      options:
-        - 淘宝
-        - 京东
-        - 两个都有
-        - 与平台无关
-    validations:
-      required: true
-
-  - type: checkboxes
-    id: checks
-    attributes:
-      label: 提交前确认
-      options:
-        - label: 已搜索过现有 issue，没有重复
-          required: true
+      required: false
