@@ -31,7 +31,7 @@ android-native/AutoBuy/app/src/main/
 └── java/com/autobuy/app/
     ├── AutoBuyApp.kt              # Application，初始化 FileLogger
     ├── MainActivity.kt            # setContent { AutoBuyAppRoot() }
-    ├── accessibility/AutoBuyAccessibilityService.kt   # 无障碍：找/点节点、坐标手势、截图、返回
+    ├── accessibility/AutoBuyAccessibilityService.kt   # 无障碍：找/点节点、坐标手势、截图（含失败码）、返回
     ├── core/
     │   ├── LogBus.kt              # 内存日志 + 运行状态 + 阶段（StateFlow），并写文件
     │   ├── FileLogger.kt          # 日志持久化到 logs/autobuy.log（超限轮转）
@@ -40,7 +40,7 @@ android-native/AutoBuy/app/src/main/
     │   ├── Updater.kt             # 查 GitHub Release 是否有新版
     │   ├── ThemePref.kt           # 主题模式（system/light/dark）持久化
     │   ├── Permissions.kt         # 无障碍/悬浮窗状态与跳转
-    │   └── ImageMatcher.kt        # 灰度 SAD 模板匹配（缩放/比例区域/topmost/环形校验）+ 纯色质心
+    │   └── ImageMatcher.kt        # 掩码灰度 SAD 多尺度模板匹配（比例区域/topmost/16 向环形校验）+ 纯色质心
     ├── seckill/
     │   ├── SeckillConfig.kt       # Platform / SeckillConfig / Stage 枚举
     │   ├── SeckillEngine.kt       # 抢购引擎（核心流程）
@@ -61,7 +61,7 @@ android-native/AutoBuy/app/src/main/
 ### 抢购流程（`SeckillEngine`，移动端与网页端不同）
 `Stage`：`IDLE → PREPARE → NAVIGATE → REFRESH → SUBMIT → VERIFY → DONE`（`LogBus.setStage` 供 UI 与悬浮指引读取）。
 1. **PREPARE**：`TimeSync` 校准网络时间偏移；等到 `目标 - navigateLeadSeconds`（默认 20s）。
-2. **NAVIGATE（就位）**：确保目标 App 在前台 → 无障碍点「购物车」→ 图像识别勾选商品（模板 + 环形校验 + topmost）→ 点「结算/去结算」→ 进确认订单页。`fast` 模式用于到点后的快速重试。
+2. **NAVIGATE（就位）**：确保目标 App 在前台 → 无障碍点「购物车」→ 图像识别勾选商品（掩码多尺度模板 + 16 向环形校验 + topmost）→ 点「结算/去结算」→ **校验确认订单页真的出现**（没出现就判失败）。`fast` 模式用于到点后的快速重试。
 3. **REFRESH（刷新）**：**开卖前 5 秒起**，确认订单页若有「号码保护」开关，则以 `refreshIntervalMs`（默认 250ms）切换它刷新开卖状态；没有则跳过。
 4. **SUBMIT（提交）**：到点快速连点「立即支付/提交订单」（150ms）。兜底策略：
    - 在确认页但显示「暂时不能购买/￥0」→ **留在确认页**继续用「号码保护」刷新开卖状态（**不退回购物车重进**，重进要 2~3s 会错过开卖瞬间）；
@@ -72,7 +72,12 @@ android-native/AutoBuy/app/src/main/
 
 ### 关键实现细节
 - **无障碍**（`AutoBuyAccessibilityService`）：遍历 `AccessibilityNodeInfo` 找/点节点（text/desc）、`dispatchGesture` 坐标点击、`performGlobalAction` 返回；**截图用 `AccessibilityService.takeScreenshot`（Android 11+）**，无需 MediaProjection。同进程静态 `instance` 供引擎与 UI 使用。
-- **图像识别**（`ImageMatcher`，纯 Kotlin 无 OpenCV）：灰度 SAD 模板匹配，支持按设备宽度缩放、比例区域、取最上方，以及 `isRingLike` 环形校验（排除商品图实心圆）；`findColorCentroid` 找纯色按钮。
+- **图像识别**（`ImageMatcher`，纯 Kotlin 无 OpenCV）：
+  - 掩码灰度 SAD 多尺度匹配（默认 0.65/0.75/0.85/0.95/1.1/1.25）：**只对模板里有内容的像素算分**，否则大片白底会和稀疏的灰环模板拿到 90%+ 的高分（#27 曾点在标题栏上）；
+  - 比例区域 + `topmost` 取最上方；`isRingLike` 16 方向校验（中心亮、环低饱和灰且更暗）；
+  - 勾选阈值 **0.90**，低于阈值输出「未命中 + 屏幕/区域/模板/最高分」日志；
+  - `findColorCentroid` 找纯色按钮（注意：淘宝结算按钮在不可用时仍是橙色，不能用来判断是否可点）。
+- **无障碍截图**：`takeScreenshot` 系统限频 **≥333ms**（引擎按 360ms 节流并失败重试）；失败码会写日志（无权限/限频/安全窗口/ROM 缓冲转换失败）。Android 11 以下不可用。
 - **悬浮指引**（`GuidanceOverlay`）：`TYPE_APPLICATION_OVERLAY` + `FLAG_NOT_TOUCHABLE`；**所有 View 操作必须切主线程**（否则 `CalledFromWrongThreadException` 崩溃）。
 - **日志**：`LogBus.add()` → 内存（UI）+ `android.util.Log`（logcat 标签 `AutoBuy`）+ `FileLogger`（文件）。日志页可导出诊断报告。
 - **主题**：`Color.kt` 取值必须与 `hanphone-blog/android` 的 `ui/theme/Color.kt` **逐值一致**；`ThemePref` 存 system/light/dark。
@@ -90,7 +95,8 @@ App 内「检查更新」读取 `https://api.github.com/repos/HanphoneJan/AutoBu
 ### 已知问题 / 注意事项（重要）
 - **无障碍服务会被系统关闭**（尤其**重装/更新 App 后**、被省电清理、重启后）。抢购前必须确认 App 内显示「已开启」；**抢购前不要重装或强制停止 App**。
 - 就绪判断用**服务实例**（`AutoBuyAccessibilityService.instance`）而非读 `Settings`（MIUI 下不准）。用 adb 写 `enabled_accessibility_services` 只是临时手段，**用户需在系统设置里手动开启**才稳。
-- 图像模板与购物车布局强相关，App 改版后可能需重录模板；识别只按"最上方复选框"，**不能按关键词精确选品**。
+- 图像模板与购物车布局强相关，App 改版后可能需重录模板；识别只按"最上方复选框"，**不能按关键词精确选品**；最上方可能是「店铺」复选框，会选中该店铺下多件商品。
+- 真机调试抢购任务会**真实下单**：测试时必须在 `targetTime` 前至少 15 秒停掉 App，否则会生成待付款订单。
 - 网页端没有的「号码保护」是**确认订单页**（普通订单）的控件；淘宝预售确认页也有。
 - 预约/预约商品开售前**不可勾选**，靠"到点重就位"。
 - **未实现**：定时待命（到点自动唤醒执行）、看门狗（无障碍掉线自愈）、常亮 WakeLock。
