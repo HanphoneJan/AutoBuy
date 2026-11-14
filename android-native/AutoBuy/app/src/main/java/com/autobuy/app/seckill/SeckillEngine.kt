@@ -42,6 +42,8 @@ class SeckillEngine(private val context: Context) {
 
     /** 点完提交后多久之内离开确认页才算「提交成功跳转」：避免把页面加载中误判为已提交 */
     private val leaveConfirmGraceMs = 5_000L
+    /** 有效提交后，确认页消失需要持续多久才认成功（排除节点重建/跳转渲染的瞬间） */
+    private val leaveConfirmConfirmMs = 1_200L
     /** 进/回结算页后等待确认页就绪的上限 */
     private val confirmReadyWaitMs = 3_000L
     /** 开卖前多久开始用「号码保护」刷新（不提前太久，避免长时间高频切换） */
@@ -50,8 +52,18 @@ class SeckillEngine(private val context: Context) {
     private val privacyKeywords = listOf("号码保护", "隐私号码", "隐私保护")
     private val submitKeywords = listOf("立即支付", "提交订单")
     private val notOnSaleKeywords = listOf(
-        "暂时不能购买", "未开售", "未开始", "即将开售", "立即支付￥0", "提交订单￥0"
+        "暂时不能购买", "未开售", "未开始", "即将开售", "已售罄", "已下架",
+        "立即支付￥0", "提交订单￥0"
     )
+
+    /** 真正跳到支付/收银台才有的文案（不能放「付款」/「立即付款」：确认页有「实付款」，待付款列表有「立即付款」）。 */
+    private val payPageKeywords = listOf("收银台", "确认付款", "支付订单", "订单提交成功")
+
+    /** 订单列表的空态文案。 */
+    private val emptyOrderKeywords = listOf("暂无订单", "没有相关订单", "暂无相关订单", "快去挑选", "空空如也")
+
+    /** 订单条目的特征文案（只用于确认「列表里有订单」，不用于判断提交成功）。 */
+    private val orderEntryKeywords = listOf("去支付", "立即付款", "等待付款", "订单号", "实付款")
 
     suspend fun run(config: SeckillConfig) {
         val a11y = AutoBuyAccessibilityService.instance
@@ -63,14 +75,31 @@ class SeckillEngine(private val context: Context) {
 
         LogBus.setStage(Stage.PREPARE)
         LogBus.add("网络时间校准中...")
-        val offset = TimeSync.calibrateOffset()
-        LogBus.add(if (offset != 0L) "网络时间校准成功，偏移 ${offset}ms" else "网络时间校准失败，使用本机时间")
+        var offset = TimeSync.calibrateOffset()
+        if (offset != 0L) {
+            LogBus.add("网络时间校准成功，偏移 ${offset}ms")
+        } else {
+            LogBus.add("网络时间校准失败，先按本机时间；请确认手机已开启「自动确定日期和时间」")
+        }
         fun now() = System.currentTimeMillis() + offset
 
         LogBus.add("目标时间：${format(config.targetTimeMs)}")
+        if (config.keyword.isBlank()) {
+            LogBus.add("未填商品关键词：回查只能确认「待付款列表有订单」，建议填写以便精确核验")
+        }
         val navStart = config.targetTimeMs - config.navigateLeadSeconds * 1000L
+        var retriedSync = offset != 0L
         while (now() < navStart) {
             val remain = navStart - now()
+            // 启动时校准失败的话，离目标还早时再补一次（失败提示已在上面给过）
+            if (!retriedSync && remain > 15_000) {
+                retriedSync = true
+                val retry = TimeSync.calibrateOffset()
+                if (retry != 0L) {
+                    offset = retry
+                    LogBus.add("网络时间校准成功（重试），偏移 ${retry}ms")
+                }
+            }
             if (remain > 10_000) {
                 LogBus.add("距开始就位还有 ${remain / 1000}s")
                 delay(5000)
@@ -122,14 +151,26 @@ class SeckillEngine(private val context: Context) {
             delay(2000)
             verified = verifyOrder(a11y, config.platform, config.keyword)
         }
-        LogBus.add(if (verified) "回查通过：已进入支付/待付款，请尽快付款" else "回查未确认，请手动到「待付款」核对")
+        LogBus.add(
+            when {
+                !verified -> "回查未确认，请手动到「待付款」核对"
+                config.keyword.isBlank() ->
+                    "回查通过：待付款列表有订单（未填关键词，可能含旧订单，请核对商品）"
+                else -> "回查通过：待付款列表命中订单，请尽快付款"
+            }
+        )
         LogBus.setStage(Stage.DONE)
     }
 
     /**
      * 结果回查：提交后确认是否真的生成了订单。
-     * 1) 当前页若是支付/收银台 → 成功；
-     * 2) 否则打开「我的 → 待付款」订单列表，核对是否有订单（有 keyword 时按关键词匹配）。
+     *
+     * 不能按「页面有『付款/待付款』字样」就判成功：
+     *  - 确认页有「实付款 / 付款方式」，contains 匹配「付款」会假成功；
+     *  - 「我的淘宝 / 我的」页自带「待付款」入口，keyword 为空时会直接误判；
+     *  - 待付款列表可能是空的，标题仍然存在。
+     * 所以：先排除仍在确认页；只认收银台/确认付款等支付页文案；
+     * 打开待付款后必须有订单条目，填了关键词还要命中商品标题。
      */
     private suspend fun verifyOrder(
         a11y: AutoBuyAccessibilityService,
@@ -137,32 +178,55 @@ class SeckillEngine(private val context: Context) {
         keyword: String
     ): Boolean {
         delay(1500)
-        if (a11y.hasText(listOf("收银台", "支付宝", "付款", "待付款"), contains = true) ||
-            a11y.hasDesc(listOf("收银台", "支付宝", "付款"), contains = true)
-        ) {
-            return true
+        // 支付页在确认页之前判：京东收银台也可能有「立即支付」按钮
+        if (isOnPayPage(a11y)) return true
+        if (isOnConfirmPage(a11y)) {
+            LogBus.add("回查：仍在确认订单页，未提交成功")
+            return false
         }
         // 打开订单列表回查
         if (platform == Platform.TAOBAO) {
-            a11y.clickByText(listOf("我的淘宝"), contains = false, timeoutMs = 1500)
-            delay(1500)
-            a11y.clickByText(listOf("待付款"), contains = false, timeoutMs = 1500)
-            delay(2500)
+            a11y.clickByTextOrDesc(listOf("我的淘宝"), contains = false, timeoutMs = 1500)
         } else {
             a11y.clickByTextOrDesc(listOf("我的"), contains = false, timeoutMs = 1500)
-            delay(1500)
-            a11y.clickByText(listOf("待付款"), contains = false, timeoutMs = 1500)
-            delay(2500)
         }
-        val onPending = a11y.hasText(listOf("待付款"), contains = true) ||
-            a11y.hasDesc(listOf("待付款"), contains = true)
-        if (!onPending) return false
+        delay(1500)
+        a11y.clickByTextOrDesc(listOf("待付款"), contains = false, timeoutMs = 2000)
+        delay(2500)
+        if (a11y.hasText(emptyOrderKeywords, contains = true) ||
+            a11y.hasDesc(emptyOrderKeywords, contains = true)
+        ) {
+            LogBus.add("回查：待付款列表为空")
+            return false
+        }
+        val hasOrder = a11y.hasText(orderEntryKeywords, contains = true) ||
+            a11y.hasDesc(orderEntryKeywords, contains = true)
+        if (!hasOrder) {
+            LogBus.add("回查：未发现订单条目")
+            return false
+        }
         if (keyword.isNotBlank()) {
-            return a11y.hasText(listOf(keyword), contains = true) ||
+            val hit = a11y.hasText(listOf(keyword), contains = true) ||
                 a11y.hasDesc(listOf(keyword), contains = true)
+            LogBus.add(if (hit) "回查：待付款列表命中「$keyword」" else "回查：待付款列表未找到「$keyword」")
+            return hit
         }
         return true
     }
+
+    /** 是否仍在确认订单页（有提交按钮或未开售文案）。 */
+    private fun isOnConfirmPage(a11y: AutoBuyAccessibilityService): Boolean =
+        a11y.hasDesc(submitKeywords, contains = true) || isNotOnSale(a11y)
+
+    /** 是否显示「未开售 / ￥0」等不可提交状态（淘宝 Weex 多是 text，必须两种都判）。 */
+    private fun isNotOnSale(a11y: AutoBuyAccessibilityService): Boolean =
+        a11y.hasDesc(notOnSaleKeywords, contains = true) ||
+            a11y.hasText(notOnSaleKeywords, contains = true)
+
+    /** 是否已经进入支付/收银台。 */
+    private fun isOnPayPage(a11y: AutoBuyAccessibilityService): Boolean =
+        a11y.hasText(payPageKeywords, contains = true) ||
+            a11y.hasDesc(payPageKeywords, contains = true)
 
     /** 自动就位：切到购物车 → 选商品 → 结算 → 确认订单页。fast 用于到点后的快速重试。 */
     private suspend fun navigateToConfirm(
@@ -192,8 +256,20 @@ class SeckillEngine(private val context: Context) {
 
         // 勾选第一个未选中的商品（图像识别 + 环形校验，取最上方）
         val selectDeadline = System.currentTimeMillis() + if (fast) 2000 else 6000
-        stepTemplate(a11y, checkboxTemplate, checkboxRegion, 0.86f, true, selectDeadline, "勾选第一个商品")
-        delay(if (fast) 400 else 700)
+        val point = stepTemplate(
+            a11y, checkboxTemplate, checkboxRegion, 0.86f, true, selectDeadline, "勾选第一个商品"
+        )
+        if (point == null) {
+            LogBus.add("未找到购物车勾选模板（超时）；图像识别需 Android 11+，且购物车布局需与模板一致")
+        } else {
+            delay(if (fast) 300 else 500)
+            // 商品本来就勾选时，这一下会把它点掉 → 结算按钮变灰。点回恢复一次（#27）
+            if (!hasSettleColor(a11y, settleColor)) {
+                LogBus.add("勾选后结算按钮仍不可用，重新点一次复选框")
+                a11y.tap(point.x.toFloat(), point.y.toFloat())
+                delay(if (fast) 300 else 600)
+            }
+        }
 
         // 点击「结算 / 去结算」
         val settleDeadline = System.currentTimeMillis() + if (fast) 2000 else 6000
@@ -288,13 +364,20 @@ class SeckillEngine(private val context: Context) {
         var offConfirmSince = 0L
         var submitClicks = 0
         var validSubmitAt = 0L
+        var confirmGoneSince = 0L
         var refreshCount = 0
         var nextRefreshAt = 0L
 
         while (now() < deadline) {
             if (!a11y.hasDesc(submitKeywords, contains = true)) {
-                // 按钮可用时点过提交、之后离开确认页 → 提交成功跳转
-                if (validSubmitAt > 0 && now() - validSubmitAt <= leaveConfirmGraceMs) return true
+                // 已进入支付/收银台 → 提交成功
+                if (isOnPayPage(a11y)) return true
+                if (validSubmitAt > 0 && now() - validSubmitAt <= leaveConfirmGraceMs) {
+                    // 点过有效提交后确认页消失，但要持续一段时间才认，
+                    // 避免页面跳转/节点重建的瞬间被当成提交成功（#26 假成功）
+                    if (confirmGoneSince == 0L) confirmGoneSince = now()
+                    if (now() - confirmGoneSince >= leaveConfirmConfirmMs) return true
+                }
                 // 持续不在确认页：只有本轮从没进过确认页才重新就位；
                 // 进过确认页就说明是页面自己走了（正在跳转/已提交），留在原地等，不退回购物车
                 if (offConfirmSince == 0L) offConfirmSince = now()
@@ -310,20 +393,23 @@ class SeckillEngine(private val context: Context) {
             }
             reachedConfirm = true
             offConfirmSince = 0L
+            confirmGoneSince = 0L
 
             // 1) 点提交：文字/描述优先，取不到描述用颜色兜底
             if (clickSubmit(a11y, submitKeywords, settleColor)) {
                 submitClicks++
                 if (submitClicks == 1 || submitClicks % 10 == 0) LogBus.add("点击提交（第 $submitClicks 次）")
-                // 按钮可用（不是「未开售/￥0」）才算有效提交
-                if (!a11y.hasDesc(notOnSaleKeywords, contains = true)) {
+                // 按钮可用（不是「未开售/￥0」）才算有效提交。
+                // 淘宝 Weex 的「暂时不能购买/￥0」是 text，必须 text + desc 都判。
+                if (!isNotOnSale(a11y)) {
                     validSubmitAt = now()
-                    if (!a11y.hasDesc(submitKeywords, contains = true)) return true
+                } else if (submitClicks == 1) {
+                    LogBus.add("提交按钮显示未开售（￥0/暂时不能购买），继续刷新")
                 }
             }
 
             // 2) 仍显示未开售 → 留在确认页用「号码保护」刷新开卖状态，不离开页面
-            if (a11y.hasDesc(notOnSaleKeywords, contains = true)) {
+            if (isNotOnSale(a11y)) {
                 if (now() >= nextRefreshAt) {
                     a11y.toggleByTextOrDesc(privacyKeywords, timeoutMs = 150)
                     refreshCount++
@@ -336,8 +422,9 @@ class SeckillEngine(private val context: Context) {
             delay(150)
         }
         LogBus.add("提交窗口结束（共点击提交 $submitClicks 次，刷新 $refreshCount 次）")
-        // 窗口结束时点过提交且已离开确认页，仍按成功处理，交回查确认
-        return submitClicks > 0 && !a11y.hasDesc(submitKeywords, contains = true)
+        // 窗口结束时点过提交且已离开确认页，仍按成功处理，交回查确认；
+        // 但还在确认页/未开售状态时不能算提交成功
+        return submitClicks > 0 && (isOnPayPage(a11y) || !isOnConfirmPage(a11y))
     }
 
     /** 点一次提交：文字/描述优先，取不到描述用颜色兜底（淘宝 Weex 提交按钮同为橙色、同在右下）。 */
@@ -378,14 +465,14 @@ class SeckillEngine(private val context: Context) {
         topmost: Boolean,
         deadline: Long,
         label: String
-    ): Boolean {
+    ): Point? {
         val tmpl = loadAsset(asset)
         if (tmpl == null) {
             LogBus.add("模板缺失：$asset")
-            return false
+            return null
         }
         while (System.currentTimeMillis() < deadline) {
-            val shot = screenshot(a11y) ?: return false
+            val shot = screenshot(a11y) ?: return null
             val radius = (tmpl.width * 38 / 100).coerceAtLeast(6)
             val p = ImageMatcher.findTemplate(shot, tmpl, region, threshold, topmost) { cx, cy ->
                 ImageMatcher.isRingLike(shot, cx, cy, radius)
@@ -394,11 +481,19 @@ class SeckillEngine(private val context: Context) {
             if (p != null) {
                 a11y.tap(p.x.toFloat(), p.y.toFloat())
                 LogBus.add("$label @ ${p.x},${p.y}")
-                return true
+                return p
             }
             delay(60)
         }
-        return false
+        return null
+    }
+
+    /** 结算按钮是否可用（按平台色判断，淘宝橙 / 京东红；不可用时通常是灰色）。 */
+    private fun hasSettleColor(a11y: AutoBuyAccessibilityService, color: Int): Boolean {
+        val shot = screenshot(a11y) ?: return false
+        val p = ImageMatcher.findColorCentroid(shot, settleRegion, color, 70)
+        shot.recycle()
+        return p != null
     }
 
     private fun screenshot(a11y: AutoBuyAccessibilityService): Bitmap? {
