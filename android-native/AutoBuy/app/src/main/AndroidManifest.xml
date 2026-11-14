@@ -8,6 +8,12 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- Android 11+ 包可见性：用于在诊断日志里读取淘宝/京东版本 -->
+    <queries>
+        <package android:name="com.taobao.taobao" />
+        <package android:name="com.jingdong.app.mall" />
+    </queries>
+
     <application
         android:name=".AutoBuyApp"
         android:allowBackup="true"

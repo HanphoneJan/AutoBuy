@@ -20,6 +20,15 @@ import java.util.concurrent.TimeUnit
 class AutoBuyAccessibilityService : AccessibilityService() {
 
     companion object {
+        /** 截图派发失败（例如服务未连接）。 */
+        const val ERROR_DISPATCH_FAILED = -100
+        /** takeScreenshot 抛异常（例如缺少 canTakeScreenshot 能力）。 */
+        const val ERROR_EXCEPTION = -101
+        /** 2 秒内没有回调。 */
+        const val ERROR_TIMEOUT = -102
+        /** 系统返回成功但 Bitmap.wrapHardwareBuffer 失败（部分厂商 ROM）。 */
+        const val ERROR_WRAP_FAILED = -103
+
         @Volatile
         var instance: AutoBuyAccessibilityService? = null
             private set
@@ -84,6 +93,14 @@ class AutoBuyAccessibilityService : AccessibilityService() {
         } catch (_: Exception) {
             null
         }
+    }
+
+    /** 供日志排查：无障碍窗口/根节点数量（拿不到前台包名时用）。 */
+    fun windowSummary(): String = try {
+        val ws = windows
+        "窗口 ${ws.size} 个，有内容 ${ws.count { it.root != null }} 个，活动窗口 ${if (rootInActiveWindow != null) "有" else "无"}"
+    } catch (e: Exception) {
+        "读取窗口异常：${e.javaClass.simpleName}"
     }
 
     /** 是否存在匹配的文字。 */
@@ -172,32 +189,47 @@ class AutoBuyAccessibilityService : AccessibilityService() {
 
     /** 无障碍截图（Android 11+），无需 MediaProjection。 */
     @RequiresApi(Build.VERSION_CODES.R)
-    fun screenshot(): Bitmap? {
+    fun screenshot(): Bitmap? = screenshotWithCode().first
+
+    /**
+     * 截图并返回失败原因（0 表示成功）。
+     * 常见失败：1 调用太频繁（间隔需 ≥333ms）、3 没有无障碍截图权限（需重开服务）。
+     */
+    @RequiresApi(Build.VERSION_CODES.R)
+    fun screenshotWithCode(): Pair<Bitmap?, Int> {
         val latch = CountDownLatch(1)
         var result: Bitmap? = null
-        takeScreenshot(
-            Display.DEFAULT_DISPLAY,
-            mainExecutor,
-            object : TakeScreenshotCallback {
-                override fun onSuccess(screenshot: ScreenshotResult) {
-                    try {
-                        result = Bitmap.wrapHardwareBuffer(
-                            screenshot.hardwareBuffer,
-                            screenshot.colorSpace
-                        )?.copy(Bitmap.Config.ARGB_8888, false)
-                    } finally {
-                        screenshot.hardwareBuffer.close()
+        var errorCode = 0
+        try {
+            takeScreenshot(
+                Display.DEFAULT_DISPLAY,
+                mainExecutor,
+                object : TakeScreenshotCallback {
+                    override fun onSuccess(screenshot: ScreenshotResult) {
+                        try {
+                            result = Bitmap.wrapHardwareBuffer(
+                                screenshot.hardwareBuffer,
+                                screenshot.colorSpace
+                            )?.copy(Bitmap.Config.ARGB_8888, false)
+                        } catch (_: Exception) {
+                            result = null
+                        } finally {
+                            screenshot.hardwareBuffer.close()
+                        }
+                        latch.countDown()
                     }
-                    latch.countDown()
-                }
 
-                override fun onFailure(errorCode: Int) {
-                    latch.countDown()
+                    override fun onFailure(code: Int) {
+                        errorCode = code
+                        latch.countDown()
+                    }
                 }
-            }
-        )
-        latch.await(2000, TimeUnit.MILLISECONDS)
-        return result
+            )
+        } catch (_: Exception) {
+            return null to ERROR_EXCEPTION
+        }
+        if (!latch.await(2000, TimeUnit.MILLISECONDS)) return null to ERROR_TIMEOUT
+        return result to errorCode
     }
 
     private fun clickNode(node: AccessibilityNodeInfo): Boolean {

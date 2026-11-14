@@ -4,7 +4,9 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Point
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 /**
  * 轻量图像识别（不依赖 OpenCV）：
@@ -12,6 +14,13 @@ import kotlin.math.roundToInt
  *  - findColorCentroid：区域内目标颜色的质心（用于纯色按钮）
  */
 object ImageMatcher {
+
+    /** 一次模板匹配结果：位置、分数（0~1）、使用的缩放。 */
+    data class Match(val point: Point, val score: Double, val scale: Float)
+
+    /** 最近一次 findTemplate 的最高分（即使未过阈值，也用于排查）。 */
+    var lastBestScore = 0.0
+        private set
 
     fun findTemplate(
         screen: Bitmap,
@@ -23,7 +32,7 @@ object ImageMatcher {
         step: Int = 2,
         scales: FloatArray = floatArrayOf(1f),
         validator: ((Int, Int, Int) -> Boolean)? = null
-    ): Point? {
+    ): Match? {
         val ds = downscale.coerceAtLeast(1)
         val sw = screen.width / ds
         val sh = screen.height / ds
@@ -47,10 +56,14 @@ object ImageMatcher {
         val rr = region[2].coerceIn(rl + 1, sw)
         val rb = region[3].coerceIn(rt + 1, sh)
 
+        var globalBest = 0.0
         var topPoint: Point? = null
         var topY = Int.MAX_VALUE
+        var topScore = 0.0
+        var topScale = 1f
         var bestPoint: Point? = null
         var bestScore = -1.0
+        var bestScale = 1f
 
         for (scale in scales) {
             val tw = (template.width * scale).roundToInt().coerceAtLeast(2) / ds
@@ -62,7 +75,12 @@ object ImageMatcher {
             val tGray = IntArray(tw * th)
             tSmall.getPixels(tGray, 0, tw, 0, 0, tw, th)
             for (i in tGray.indices) tGray[i] = lum(tGray[i])
-            val maxSad = 255.0 * tw * th
+
+            // 只比较模板里有内容的像素（灰环），否则「大片白色」会和白底区域高分误匹配。
+            val mask = BooleanArray(tw * th) { tGray[it] < 235 }
+            val maskCount = mask.count { it }
+            val useMask = maskCount >= tw * th / 10
+            val maxSad = if (useMask) 255.0 * maskCount else 255.0 * tw * th
 
             var y = rt
             while (y <= rb - th) {
@@ -72,9 +90,13 @@ object ImageMatcher {
                     for (yy in 0 until th) {
                         val sBase = (y + yy) * sw + x
                         val tBase = yy * tw
-                        for (xx in 0 until tw) sad += abs(sGray[sBase + xx] - tGray[tBase + xx]).toLong()
+                        for (xx in 0 until tw) {
+                            if (useMask && !mask[tBase + xx]) continue
+                            sad += abs(sGray[sBase + xx] - tGray[tBase + xx]).toLong()
+                        }
                     }
                     val score = 1.0 - sad / maxSad
+                    if (score > globalBest) globalBest = score
                     if (score >= threshold) {
                         val cx = (x + tw / 2) * ds
                         val cy = (y + th / 2) * ds
@@ -83,10 +105,13 @@ object ImageMatcher {
                                 if (y < topY) {
                                     topY = y
                                     topPoint = Point(cx, cy)
+                                    topScore = score
+                                    topScale = scale
                                 }
                             } else if (score > bestScore) {
                                 bestScore = score
                                 bestPoint = Point(cx, cy)
+                                bestScale = scale
                             }
                         }
                     }
@@ -96,7 +121,12 @@ object ImageMatcher {
             }
         }
 
-        return if (topmost) topPoint else if (bestScore >= threshold) bestPoint else null
+        lastBestScore = globalBest
+        return if (topmost) {
+            topPoint?.let { Match(it, topScore, topScale) }
+        } else {
+            if (bestScore >= threshold) bestPoint?.let { Match(it, bestScore, bestScale) } else null
+        }
     }
 
     fun findColorCentroid(
@@ -133,18 +163,33 @@ object ImageMatcher {
         return Point((sumX / count).toInt(), (sumY / count).toInt())
     }
 
-    /** 判断 (cx,cy) 处是否是"浅底 + 灰色环"（用于排除商品图里的实心圆）。 */
+    /**
+     * 判断 (cx,cy) 处是否是"浅底 + 灰色环"（用于排除商品图、图标、文字边缘）。
+     * 16 个方向采样，要求环上多为「灰色且比中心暗」。
+     */
     fun isRingLike(screen: Bitmap, cx: Int, cy: Int, radius: Int): Boolean {
         val w = screen.width
         val h = screen.height
-        fun sample(x: Int, y: Int): Int {
-            val px = screen.getPixel(x.coerceIn(0, w - 1), y.coerceIn(0, h - 1))
-            return lum(px)
+        fun pixel(x: Int, y: Int): Int =
+            screen.getPixel(x.coerceIn(0, w - 1), y.coerceIn(0, h - 1))
+
+        val center = pixel(cx, cy)
+        val centerLum = lum(center)
+        if (centerLum < 200) return false
+
+        var hits = 0
+        for (i in 0 until 16) {
+            val angle = Math.PI * i / 8.0
+            val x = cx + (radius * cos(angle)).roundToInt()
+            val y = cy + (radius * sin(angle)).roundToInt()
+            val p = pixel(x, y)
+            val r = (p shr 16) and 0xFF
+            val g = (p shr 8) and 0xFF
+            val b = p and 0xFF
+            val chroma = maxOf(r, g, b) - minOf(r, g, b)
+            if (lum(p) <= centerLum - 10 && chroma <= 20) hits++
         }
-        val center = sample(cx, cy)
-        val ring = (sample(cx - radius, cy) + sample(cx + radius, cy) +
-            sample(cx, cy - radius) + sample(cx, cy + radius)) / 4
-        return center >= 200 && ring <= center - 12
+        return hits >= 12
     }
 
     private fun lum(c: Int): Int {

@@ -1,11 +1,13 @@
 package com.autobuy.app.seckill
 
+import android.accessibilityservice.AccessibilityService
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Point
 import android.os.Build
+import android.os.SystemClock
 import com.autobuy.app.accessibility.AutoBuyAccessibilityService
 import com.autobuy.app.core.ImageMatcher
 import com.autobuy.app.core.LogBus
@@ -47,7 +49,13 @@ class SeckillEngine(private val context: Context) {
     private val checkboxRegion = floatArrayOf(0.01f, 0.10f, 0.15f, 0.88f)
 
     /** 模板在不同 dpi/机型上的实际大小不一样，多试几档缩放。 */
-    private val checkboxScales = floatArrayOf(0.7f, 0.85f, 1.0f, 1.15f, 1.3f)
+    private val checkboxScales = floatArrayOf(0.65f, 0.75f, 0.85f, 0.95f, 1.1f, 1.25f)
+
+    /** 系统限制无障碍截图间隔 ≥333ms，这里留一点余量。 */
+    private val shotMinGapMs = 360L
+    private var lastShotAt = 0L
+    private var lastShotError = 0
+    private var noScreenshotLogged = false
 
     /** 点完提交后多久之内离开确认页才算「提交成功跳转」：避免把页面加载中误判为已提交 */
     private val leaveConfirmGraceMs = 5_000L
@@ -252,12 +260,17 @@ class SeckillEngine(private val context: Context) {
         var waited = 0
         while (a11y.currentPackage() != pkg && waited < pkgWaitSeconds) {
             if (waited == 0 && pkgWaitSeconds > 3) {
-                LogBus.add("请切换到目标 App 并停留在购物车页（当前：${a11y.currentPackage() ?: "未知"}）...")
+                LogBus.add(
+                    "请切换到目标 App 并停留在购物车页（当前：${a11y.currentPackage() ?: "未知"}；${a11y.windowSummary()}）..."
+                )
             }
             delay(1000)
             waited++
         }
-        if (a11y.currentPackage() != pkg) return false
+        if (a11y.currentPackage() != pkg) {
+            LogBus.add("未等到目标 App（当前：${a11y.currentPackage() ?: "未知"}；${a11y.windowSummary()}）")
+            return false
+        }
 
         // 打开购物车
         a11y.clickByTextOrDesc(listOf("购物车"), contains = true, timeoutMs = if (fast) 600 else 1500)
@@ -266,7 +279,7 @@ class SeckillEngine(private val context: Context) {
         // 勾选第一个未选中的商品（图像识别 + 环形校验，取最上方）
         val selectDeadline = System.currentTimeMillis() + if (fast) 2000 else 6000
         val point = stepTemplate(
-            a11y, checkboxTemplate, checkboxRegion, 0.86f, true, selectDeadline, "勾选第一个商品"
+            a11y, checkboxTemplate, checkboxRegion, 0.90f, true, selectDeadline, "勾选第一个商品"
         )
         if (point == null) {
             LogBus.add("未找到购物车勾选模板（超时）；图像识别需 Android 11+，且购物车布局需与模板一致")
@@ -293,6 +306,10 @@ class SeckillEngine(private val context: Context) {
             delay(500)
             w++
         }
+        if (!a11y.hasDesc(submitKeywords, contains = true)) {
+            LogBus.add("没有进入确认订单页（商品可能未勾选/已下架）")
+            return false
+        }
         return true
     }
 
@@ -308,7 +325,11 @@ class SeckillEngine(private val context: Context) {
                 LogBus.add("点击「${texts.first()}」（文字）")
                 return true
             }
-            val shot = screenshot(a11y) ?: return false
+            val shot = screenshot(a11y)
+            if (shot == null) {
+                delay(250)
+                continue
+            }
             val p = ImageMatcher.findColorCentroid(shot, settleRegion, color, 70)
             shot.recycle()
             if (p != null) {
@@ -329,7 +350,11 @@ class SeckillEngine(private val context: Context) {
     ) {
         val startAt = config.targetTimeMs - refreshLeadMs
         if (now() < startAt) {
-            LogBus.add("确认订单页已就位，开卖前 5 秒开始刷新（还有 ${(startAt - now()) / 1000}s）")
+            val onConfirm = a11y.hasDesc(submitKeywords, contains = true)
+            LogBus.add(
+                if (onConfirm) "确认订单页已就位，开卖前 5 秒开始刷新（还有 ${(startAt - now()) / 1000}s）"
+                else "尚未进入确认订单页，开卖后会自动重试（还有 ${(startAt - now()) / 1000}s）"
+            )
             while (now() < startAt) delay(50)
         }
         val hasPrivacy = a11y.hasDesc(privacyKeywords, contains = true) ||
@@ -459,7 +484,7 @@ class SeckillEngine(private val context: Context) {
     }
 
     /** 按颜色找右下角的提交按钮（截图失败返回 null）。 */
-    private fun findColorCentroid(a11y: AutoBuyAccessibilityService, color: Int): Point? {
+    private suspend fun findColorCentroid(a11y: AutoBuyAccessibilityService, color: Int): Point? {
         val shot = screenshot(a11y) ?: return null
         val p = ImageMatcher.findColorCentroid(shot, settleRegion, color, 70)
         shot.recycle()
@@ -483,46 +508,88 @@ class SeckillEngine(private val context: Context) {
         var lastW = 0
         var lastH = 0
         while (System.currentTimeMillis() < deadline) {
-            val shot = screenshot(a11y) ?: run {
-                LogBus.add("$label：截图失败（无障碍截图需要 Android 11+）")
-                return null
+            // 截图失败不直接放弃：等一小会儿再试（例如系统限频或页面刚切换）
+            val shot = screenshot(a11y)
+            if (shot == null) {
+                delay(300)
+                continue
             }
             lastW = shot.width
             lastH = shot.height
-            val p = ImageMatcher.findTemplate(
+            val m = ImageMatcher.findTemplate(
                 shot, tmpl, region, threshold, topmost, scales = checkboxScales
             ) { cx, cy, tw ->
-                ImageMatcher.isRingLike(shot, cx, cy, (tw * 38 / 100).coerceAtLeast(6))
+                ImageMatcher.isRingLike(shot, cx, cy, (tw * 44 / 100).coerceAtLeast(6))
             }
             shot.recycle()
-            if (p != null) {
-                a11y.tap(p.x.toFloat(), p.y.toFloat())
-                LogBus.add("$label @ ${p.x},${p.y}（屏幕 ${lastW}x$lastH）")
-                return p
+            if (m != null) {
+                a11y.tap(m.point.x.toFloat(), m.point.y.toFloat())
+                LogBus.add(
+                    "$label @ ${m.point.x},${m.point.y}（屏幕 ${lastW}x$lastH，" +
+                        "匹配 ${(m.score * 100).toInt()}%，缩放 ${m.scale}）"
+                )
+                return m.point
             }
             delay(60)
         }
         LogBus.add(
             "$label 未命中：屏幕 ${lastW}x$lastH，区域 x${(region[0] * 100).toInt()}%~${(region[2] * 100).toInt()}%，" +
-                "模板 ${tmpl.width}x${tmpl.height}，阈值 $threshold"
+                "模板 ${tmpl.width}x${tmpl.height}，阈值 $threshold，" +
+                "最高 ${(ImageMatcher.lastBestScore * 100).toInt()}%"
         )
         return null
     }
 
     /** 结算按钮是否可用（按平台色判断，淘宝橙 / 京东红；不可用时通常是灰色）。 */
-    private fun hasSettleColor(a11y: AutoBuyAccessibilityService, color: Int): Boolean {
+    private suspend fun hasSettleColor(a11y: AutoBuyAccessibilityService, color: Int): Boolean {
         val shot = screenshot(a11y) ?: return false
         val p = ImageMatcher.findColorCentroid(shot, settleRegion, color, 70)
         shot.recycle()
         return p != null
     }
 
-    private fun screenshot(a11y: AutoBuyAccessibilityService): Bitmap? {
+    /**
+     * 无障碍截图：限制最小间隔（系统要求 ≥333ms），并记录失败原因。
+     * 失败不直接放弃，由调用方按 deadline 重试。
+     */
+    private suspend fun screenshot(a11y: AutoBuyAccessibilityService): Bitmap? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-            LogBus.add("Android 11 以下不支持无障碍截图")
+            if (!noScreenshotLogged) {
+                noScreenshotLogged = true
+                LogBus.add("Android 11 以下不支持无障碍截图，购物车勾选会不可用")
+            }
             return null
         }
-        return a11y.screenshot()
+        val gap = shotMinGapMs - (SystemClock.elapsedRealtime() - lastShotAt)
+        if (gap > 0) delay(gap)
+        lastShotAt = SystemClock.elapsedRealtime()
+        val (bitmap, code) = try {
+            a11y.screenshotWithCode()
+        } catch (e: Exception) {
+            LogBus.add("截图异常：${e.javaClass.simpleName}${e.message?.let { "：$it" } ?: ""}")
+            return null
+        }
+        if (bitmap == null) {
+            if (code != lastShotError) LogBus.add("截图失败：${shotErrorText(code)}")
+            lastShotError = code
+        } else {
+            lastShotError = 0
+        }
+        return bitmap
+    }
+
+    private fun shotErrorText(code: Int): String = when (code) {
+        AccessibilityService.ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT ->
+            "调用太频繁（系统要求间隔 ≥333ms）"
+        AccessibilityService.ERROR_TAKE_SCREENSHOT_INVALID_DISPLAY -> "无效的屏幕"
+        AccessibilityService.ERROR_TAKE_SCREENSHOT_NO_ACCESSIBILITY_ACCESS ->
+            "没有截图权限：请到系统设置里把 AutoBuy 的无障碍服务关掉再重新开启"
+        AccessibilityService.ERROR_TAKE_SCREENSHOT_SECURE_WINDOW -> "当前页面禁止截图（安全窗口）"
+        AutoBuyAccessibilityService.ERROR_DISPATCH_FAILED -> "截图请求派发失败（服务可能未连接）"
+        AutoBuyAccessibilityService.ERROR_EXCEPTION -> "takeScreenshot 抛异常（缺少 canTakeScreenshot 能力）"
+        AutoBuyAccessibilityService.ERROR_TIMEOUT -> "2 秒内没有截图回调"
+        0 -> "系统返回空截图（部分厂商 ROM 不支持硬件缓冲转换）"
+        else -> "错误码 $code"
     }
 
     private fun loadAsset(path: String): Bitmap? = try {
