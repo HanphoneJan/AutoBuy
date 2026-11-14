@@ -4,10 +4,11 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Point
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
  * 轻量图像识别（不依赖 OpenCV）：
- *  - findTemplate：灰度 SAD 模板匹配，支持缩放、比例区域、取最上方
+ *  - findTemplate：灰度 SAD 模板匹配，支持多尺度、比例区域、取最上方
  *  - findColorCentroid：区域内目标颜色的质心（用于纯色按钮）
  */
 object ImageMatcher {
@@ -20,24 +21,18 @@ object ImageMatcher {
         topmost: Boolean,
         downscale: Int = 2,
         step: Int = 2,
-        validator: ((Int, Int) -> Boolean)? = null
+        scales: FloatArray = floatArrayOf(1f),
+        validator: ((Int, Int, Int) -> Boolean)? = null
     ): Point? {
         val ds = downscale.coerceAtLeast(1)
         val sw = screen.width / ds
         val sh = screen.height / ds
         if (sw < 2 || sh < 2) return null
-        val tw = (template.width / ds).coerceAtLeast(1)
-        val th = (template.height / ds).coerceAtLeast(1)
-        if (tw >= sw || th >= sh) return null
 
         val sSmall = Bitmap.createScaledBitmap(screen, sw, sh, false)
-        val tSmall = Bitmap.createScaledBitmap(template, tw, th, false)
         val sGray = IntArray(sw * sh)
         sSmall.getPixels(sGray, 0, sw, 0, 0, sw, sh)
-        val tGray = IntArray(tw * th)
-        tSmall.getPixels(tGray, 0, tw, 0, 0, tw, th)
         for (i in sGray.indices) sGray[i] = lum(sGray[i])
-        for (i in tGray.indices) tGray[i] = lum(tGray[i])
 
         val region = regionFrac?.let {
             intArrayOf(
@@ -51,53 +46,57 @@ object ImageMatcher {
         val rt = region[1].coerceIn(0, sh - 1)
         val rr = region[2].coerceIn(rl + 1, sw)
         val rb = region[3].coerceIn(rt + 1, sh)
-        if (rr - rl < tw || rb - rt < th) return null
 
-        val maxSad = 255.0 * tw * th
-        var bestX = -1
-        var bestY = -1
-        var bestScore = -1.0
-        var topX = -1
+        var topPoint: Point? = null
         var topY = Int.MAX_VALUE
+        var bestPoint: Point? = null
+        var bestScore = -1.0
 
-        var y = rt
-        while (y <= rb - th) {
-            var x = rl
-            while (x <= rr - tw) {
-                var sad = 0L
-                for (yy in 0 until th) {
-                    val sBase = (y + yy) * sw + x
-                    val tBase = yy * tw
-                    for (xx in 0 until tw) sad += abs(sGray[sBase + xx] - tGray[tBase + xx]).toLong()
-                }
-                val score = 1.0 - sad / maxSad
-                if (score >= threshold) {
-                    val cx = (x + tw / 2) * ds
-                    val cy = (y + th / 2) * ds
-                    if (validator == null || validator(cx, cy)) {
-                        if (topmost) {
-                            if (y < topY) {
-                                topY = y
-                                topX = x
+        for (scale in scales) {
+            val tw = (template.width * scale).roundToInt().coerceAtLeast(2) / ds
+            val th = (template.height * scale).roundToInt().coerceAtLeast(2) / ds
+            if (tw < 1 || th < 1 || tw >= sw || th >= sh) continue
+            if (rr - rl < tw || rb - rt < th) continue
+
+            val tSmall = Bitmap.createScaledBitmap(template, tw, th, false)
+            val tGray = IntArray(tw * th)
+            tSmall.getPixels(tGray, 0, tw, 0, 0, tw, th)
+            for (i in tGray.indices) tGray[i] = lum(tGray[i])
+            val maxSad = 255.0 * tw * th
+
+            var y = rt
+            while (y <= rb - th) {
+                var x = rl
+                while (x <= rr - tw) {
+                    var sad = 0L
+                    for (yy in 0 until th) {
+                        val sBase = (y + yy) * sw + x
+                        val tBase = yy * tw
+                        for (xx in 0 until tw) sad += abs(sGray[sBase + xx] - tGray[tBase + xx]).toLong()
+                    }
+                    val score = 1.0 - sad / maxSad
+                    if (score >= threshold) {
+                        val cx = (x + tw / 2) * ds
+                        val cy = (y + th / 2) * ds
+                        if (validator == null || validator(cx, cy, tw * ds)) {
+                            if (topmost) {
+                                if (y < topY) {
+                                    topY = y
+                                    topPoint = Point(cx, cy)
+                                }
+                            } else if (score > bestScore) {
+                                bestScore = score
+                                bestPoint = Point(cx, cy)
                             }
-                        } else if (score > bestScore) {
-                            bestScore = score
-                            bestX = x
-                            bestY = y
                         }
                     }
+                    x += step
                 }
-                x += step
+                y += step
             }
-            y += step
         }
 
-        return if (topmost) {
-            if (topX < 0) null else Point((topX + tw / 2) * ds, (topY + th / 2) * ds)
-        } else {
-            if (bestX < 0 || bestScore < threshold) null
-            else Point((bestX + tw / 2) * ds, (bestY + th / 2) * ds)
-        }
+        return if (topmost) topPoint else if (bestScore >= threshold) bestPoint else null
     }
 
     fun findColorCentroid(

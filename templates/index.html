@@ -169,7 +169,10 @@
                 <section class="log-section">
                     <div class="log-header">
                         <h2>实时日志</h2>
-                        <span id="status" class="status-badge"></span>
+                        <div class="log-actions">
+                            <button onclick="exportLogs()" class="btn btn-secondary btn-compact" title="导出含系统/浏览器版本的诊断日志">导出日志</button>
+                            <span id="status" class="status-badge"></span>
+                        </div>
                     </div>
                     <div id="logContainer" class="log-container">
                         <div class="log-entry"><span class="log-time">--:--:--</span>等待开始...</div>

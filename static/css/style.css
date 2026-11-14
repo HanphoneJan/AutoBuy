@@ -509,6 +509,18 @@ section {
     color: var(--md-on-surface);
 }
 
+.log-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn.btn-compact {
+    padding: 6px 14px;
+    font-size: 0.75rem;
+    box-shadow: none;
+}
+
 .status-badge {
     padding: 4px 12px;
     border-radius: 16px;

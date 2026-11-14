@@ -212,6 +212,15 @@ async function stopTask() {
     }
 }
 
+function exportLogs() {
+    if (!currentTaskId) {
+        alert('还没有任务可以导出');
+        return;
+    }
+    // 直接下载：后端会附带系统、Python/Selenium、Chrome/ChromeDriver 版本和任务配置
+    window.location.href = `/api/tasks/${currentTaskId}/export`;
+}
+
 async function closeBrowser() {
     if (!currentTaskId) return;
 

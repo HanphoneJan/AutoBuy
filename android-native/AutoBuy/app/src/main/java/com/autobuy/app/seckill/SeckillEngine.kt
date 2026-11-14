@@ -38,7 +38,16 @@ class SeckillEngine(private val context: Context) {
     private val jdSettleColor = Color.rgb(0xE1, 0x25, 0x1B)
 
     private val settleRegion = floatArrayOf(0.55f, 0.82f, 1.0f, 0.97f)
-    private val checkboxRegion = floatArrayOf(0.035f, 0.10f, 0.10f, 0.88f)
+
+    /**
+     * 购物车复选框的搜索区域：x 最左 1%~15%。
+     * 原来只到 10%，在 1080 宽的机器上只有约 70px 宽，和 64px 的模板几乎一样宽，
+     * 复选框位置稍偏就整片区域都放不下模板（#27 勾不上）。
+     */
+    private val checkboxRegion = floatArrayOf(0.01f, 0.10f, 0.15f, 0.88f)
+
+    /** 模板在不同 dpi/机型上的实际大小不一样，多试几档缩放。 */
+    private val checkboxScales = floatArrayOf(0.7f, 0.85f, 1.0f, 1.15f, 1.3f)
 
     /** 点完提交后多久之内离开确认页才算「提交成功跳转」：避免把页面加载中误判为已提交 */
     private val leaveConfirmGraceMs = 5_000L
@@ -471,20 +480,32 @@ class SeckillEngine(private val context: Context) {
             LogBus.add("模板缺失：$asset")
             return null
         }
+        var lastW = 0
+        var lastH = 0
         while (System.currentTimeMillis() < deadline) {
-            val shot = screenshot(a11y) ?: return null
-            val radius = (tmpl.width * 38 / 100).coerceAtLeast(6)
-            val p = ImageMatcher.findTemplate(shot, tmpl, region, threshold, topmost) { cx, cy ->
-                ImageMatcher.isRingLike(shot, cx, cy, radius)
+            val shot = screenshot(a11y) ?: run {
+                LogBus.add("$label：截图失败（无障碍截图需要 Android 11+）")
+                return null
+            }
+            lastW = shot.width
+            lastH = shot.height
+            val p = ImageMatcher.findTemplate(
+                shot, tmpl, region, threshold, topmost, scales = checkboxScales
+            ) { cx, cy, tw ->
+                ImageMatcher.isRingLike(shot, cx, cy, (tw * 38 / 100).coerceAtLeast(6))
             }
             shot.recycle()
             if (p != null) {
                 a11y.tap(p.x.toFloat(), p.y.toFloat())
-                LogBus.add("$label @ ${p.x},${p.y}")
+                LogBus.add("$label @ ${p.x},${p.y}（屏幕 ${lastW}x$lastH）")
                 return p
             }
             delay(60)
         }
+        LogBus.add(
+            "$label 未命中：屏幕 ${lastW}x$lastH，区域 x${(region[0] * 100).toInt()}%~${(region[2] * 100).toInt()}%，" +
+                "模板 ${tmpl.width}x${tmpl.height}，阈值 $threshold"
+        )
         return null
     }
 

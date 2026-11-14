@@ -5,6 +5,9 @@ from datetime import datetime
 import time
 import os
 import json
+import platform as py_platform
+import subprocess
+from importlib.metadata import version as package_version, PackageNotFoundError
 from collections import deque
 
 from seckill import SeckillWorker, BrowserManager
@@ -327,6 +330,75 @@ def stream_logs(task_id):
             time.sleep(0.5)
 
     return Response(generate(), mimetype='text/event-stream')
+
+
+def _pkg_version(name):
+    try:
+        return package_version(name)
+    except PackageNotFoundError:
+        return '未安装'
+
+
+def _build_export_report(task):
+    """导出可排查的网页版日志：运行环境 + 浏览器/驱动版本 + 任务配置 + 完整日志。"""
+    worker = task.get('worker')
+    driver = getattr(worker, 'driver', None)
+    try:
+        caps = driver.capabilities or {} if driver else {}
+    except Exception:
+        caps = {}
+    try:
+        commit = subprocess.check_output(
+            ['git', 'rev-parse', '--short', 'HEAD'],
+            cwd=PROJECT_DIR, text=True, timeout=2
+        ).strip()
+    except Exception:
+        commit = '未知'
+
+    lines = [
+        'AutoBuy 网页版诊断日志',
+        '========================================',
+        f"导出时间 : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        f"代码版本 : {commit}",
+        f"任务     : {task.get('id')} / {task.get('platform')} / 状态 {task.get('status')}",
+        f"目标时间 : {task.get('target_time') or '未设置'}",
+        f"商品关键词: {task.get('product_keyword') or '未填'}",
+        f"系统     : {py_platform.platform()}",
+        f"Python   : {py_platform.python_version()}",
+        f"Flask    : {_pkg_version('flask')}",
+        f"Selenium : {_pkg_version('selenium')}",
+        f"Chrome   : {caps.get('browserVersion') or '未知（浏览器未打开）'}",
+        f"Driver   : {(caps.get('chrome') or {}).get('chromedriverVersion') or '未知'}",
+        '========================================',
+        '日志（最新在下）',
+        '----------------------------------------',
+    ]
+    for log in list(task.get('logs', [])):
+        time_str = log.get('time', '')
+        message = log.get('message', '')
+        # add_log 已从消息里提取过时间，消息本身通常带 [HH:MM:SS]，避免重复
+        if message.startswith('['):
+            lines.append(message)
+        else:
+            lines.append(f'[{time_str}] {message}')
+    return '\n'.join(lines)
+
+
+@app.route('/api/tasks/<task_id>/export')
+def export_task_logs(task_id):
+    task = task_manager.get_task(task_id)
+    if not task:
+        return jsonify({'error': '任务不存在'}), 404
+    text = _build_export_report(task)
+    filename = f"autobuy_web_{task_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+    return Response(
+        text,
+        mimetype='text/plain',
+        headers={
+            'Content-Disposition': f'attachment; filename="{filename}"',
+            'Cache-Control': 'no-store',
+        }
+    )
 
 
 if __name__ == '__main__':
