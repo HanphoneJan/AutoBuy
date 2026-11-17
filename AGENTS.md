@@ -90,6 +90,18 @@ export ANDROID_HOME=~/Android/Sdk
 App 内「检查更新」读取 `https://api.github.com/repos/HanphoneJan/AutoBuy/releases/latest`，与 `BuildConfig.VERSION_NAME` 比较。
 
 调试机（可用 adb 直接验证）：Redmi Note 12 Turbo（23049RAD8C），1080x2400，Android 15，装有淘宝/京东。
+
+**真机自测夹具（不必每次找"抢购商品"）**：
+- 测试品固定为**维达抽纸 3 层 100 抽\*10 包（京东自营，SKU `100021015676`，约 ¥17.9，长期在售）**。
+- 脚本 `scripts/android-seckill-test.sh`：
+  - `prepare`：深链打开该 SKU → 点「加入购物车」→ 规格面板点底部通栏「确定」→ 打开购物车（加购即勾选）；
+  - `run`：京东 +「现在+1分」+ 开始抢购 → 切购物车 → 到点前 8 秒停掉（**不会下单**）并打印日志；
+  - `run --submit`：跑到点，会生成真实待付款订单（测完去取消）；
+  - `logs`：只看 AutoBuy 日志。脚本会自动把本服务补进 `enabled_accessibility_services`（ROM 会在 force-stop/更新后踢掉）。
+- 预期日志：`点击结算 @ x,y` → `确认订单页已就位…`（0.3.8 起京东也能认出确认页）→ 到点 `已点击京东「立即支付」`。
+- 真实「京东秒杀」走秒杀页直接购买、不进购物车，和本应用的购物车流程不同；测试用普通商品 + 任意目标时间即可覆盖同一代码路径。
+- 坐标必须用 `uiautomator dump` 的 bounds 换算：**截图在聊天窗口里是缩放过的，肉眼估坐标会偏 150px 以上**（踩过）。
+- 购物车「合计」不含运费（测试单 ¥17.9，下单后变成 ¥23.9，含 ¥6 运费），这是京东正常行为，不是程序算错。
 `adb shell am start -a android.intent.action.VIEW -d "openapp.jdmobile://virtual?params=%7B%22category%22%3A%22jump%22%2C%22des%22%3A%22cart%22%7D"` 可直接打开京东购物车；**跑抢购任务有真实下单风险，只在确认购物车里的商品不可购买时测试**。
 
 ### 已知问题 / 注意事项（重要）
