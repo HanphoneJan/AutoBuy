@@ -43,6 +43,19 @@ class SeckillEngine(private val context: Context) {
 
     private val settleRegion = floatArrayOf(0.55f, 0.82f, 1.0f, 0.97f)
 
+    /**
+     * 底部按钮带（整行）：京东确认页的「立即支付」是通栏按钮（约占满屏宽），
+     * 购物车的「去结算」只在右下角。只取 y 91%~97%，避开购物车里的红色优惠券横幅。
+     */
+    private val bottomButtonBand = floatArrayOf(0f, 0.91f, 1f, 0.97f)
+
+    /** 通栏按钮宽度阈值：超过 60% 屏宽就认为在确认订单页/支付页 */
+    private val fullWidthButtonRatio = 0.6f
+
+    /** 图片判断确认页的缓存，避免 150ms 循环里每次都截图（系统限频 333ms） */
+    private var confirmShotAt = 0L
+    private var confirmShotHit = false
+
     /** 系统限制无障碍截图间隔 ≥333ms，这里留一点余量。 */
     private val shotMinGapMs = 360L
     private var lastShotAt = 0L
@@ -155,7 +168,7 @@ class SeckillEngine(private val context: Context) {
         }
 
         LogBus.setStage(Stage.REFRESH)
-        refreshUntilTarget(a11y, config, ::now)
+        refreshUntilTarget(a11y, config, ::now, settleColor)
 
         LogBus.setStage(Stage.SUBMIT)
         val submitted = submitWithRetry(a11y, config, ::now, pkg, settleText, settleColor)
@@ -167,11 +180,11 @@ class SeckillEngine(private val context: Context) {
         }
         LogBus.setStage(Stage.VERIFY)
         LogBus.add("已提交，正在回查订单...")
-        var verified = verifyOrder(a11y, config.platform, config.keyword)
+        var verified = verifyOrder(a11y, config.platform, config.keyword, settleColor)
         if (!verified) {
             // 订单列表有延迟，补一次回查再下结论
             delay(2000)
-            verified = verifyOrder(a11y, config.platform, config.keyword)
+            verified = verifyOrder(a11y, config.platform, config.keyword, settleColor)
         }
         LogBus.add(
             when {
@@ -197,12 +210,13 @@ class SeckillEngine(private val context: Context) {
     private suspend fun verifyOrder(
         a11y: AutoBuyAccessibilityService,
         platform: Platform,
-        keyword: String
+        keyword: String,
+        color: Int
     ): Boolean {
         delay(1500)
         // 支付页在确认页之前判：京东收银台也可能有「立即支付」按钮
         if (isOnPayPage(a11y)) return true
-        if (isOnConfirmPage(a11y)) {
+        if (isOnConfirmPage(a11y, color)) {
             LogBus.add("回查：仍在确认订单页，未提交成功")
             return false
         }
@@ -236,9 +250,32 @@ class SeckillEngine(private val context: Context) {
         return true
     }
 
-    /** 是否仍在确认订单页（有提交按钮或未开售文案）。 */
-    private fun isOnConfirmPage(a11y: AutoBuyAccessibilityService): Boolean =
-        a11y.hasDesc(submitKeywords, contains = true) || isNotOnSale(a11y)
+    /**
+     * 是否在确认订单页。
+     *
+     * 淘宝：读 content-desc/text。京东购物车与确认页都是纯自绘、没有文字，
+     * 只能看底部按钮：确认页是整行通栏（「立即支付」），购物车是右下角小按钮。
+     * 图片判断带 500ms 缓存，避免提交循环里被截图限频拖慢。
+     */
+    private suspend fun isOnConfirmPage(a11y: AutoBuyAccessibilityService, color: Int): Boolean {
+        if (isNotOnSale(a11y)) return true
+        if (a11y.hasDesc(submitKeywords, contains = true) ||
+            a11y.hasText(submitKeywords, contains = true)
+        ) return true
+        return fullWidthBottomButton(a11y, color)
+    }
+
+    /** 底部是否整行通栏品牌色按钮（京东确认页的「立即支付」）。 */
+    private suspend fun fullWidthBottomButton(a11y: AutoBuyAccessibilityService, color: Int): Boolean {
+        val nowElapsed = SystemClock.elapsedRealtime()
+        if (nowElapsed - confirmShotAt < 500) return confirmShotHit
+        val shot = screenshot(a11y) ?: return confirmShotHit
+        val ratio = ImageMatcher.longestColorRun(shot, bottomButtonBand, color, 70)
+        shot.recycle()
+        confirmShotAt = SystemClock.elapsedRealtime()
+        confirmShotHit = ratio >= fullWidthButtonRatio
+        return confirmShotHit
+    }
 
     /** 是否显示「未开售 / ￥0」等不可提交状态（淘宝 Weex 多是 text，必须两种都判）。 */
     private fun isNotOnSale(a11y: AutoBuyAccessibilityService): Boolean =
@@ -259,7 +296,7 @@ class SeckillEngine(private val context: Context) {
         pkgWaitSeconds: Int = 15,
         fast: Boolean = false
     ): Boolean {
-        if (a11y.hasDesc(submitKeywords, contains = true)) return true
+        if (isOnConfirmPage(a11y, settleColor)) return true
 
         var waited = 0
         while (a11y.currentPackage() != pkg && waited < pkgWaitSeconds) {
@@ -305,11 +342,11 @@ class SeckillEngine(private val context: Context) {
 
         var w = 0
         val maxW = if (fast) 4 else 8
-        while (!a11y.hasDesc(submitKeywords, contains = true) && w < maxW) {
+        while (!isOnConfirmPage(a11y, settleColor) && w < maxW) {
             delay(500)
             w++
         }
-        if (!a11y.hasDesc(submitKeywords, contains = true)) {
+        if (!isOnConfirmPage(a11y, settleColor)) {
             LogBus.add(
                 "没有进入确认订单页：请确认购物车里已勾选要抢的商品、商品在售；" +
                     "当前：${a11y.currentPackage() ?: "未知"}，" +
@@ -418,6 +455,16 @@ class SeckillEngine(private val context: Context) {
                 delay(250)
                 continue
             }
+            // 底部变成整行通栏按钮 = 已经在确认订单页（京东的「立即支付」就在这里），
+            // 再点就变成直接下单付款了（真机测试时出过这个事故）
+            val run = ImageMatcher.longestColorRun(shot, bottomButtonBand, color, 70)
+            confirmShotAt = SystemClock.elapsedRealtime()
+            confirmShotHit = run >= fullWidthButtonRatio
+            if (confirmShotHit) {
+                shot.recycle()
+                LogBus.add("底部是整行通栏按钮（已在确认/支付页），不再点结算")
+                return false
+            }
             val p = ImageMatcher.findColorCentroid(shot, settleRegion, color, 70)
             shot.recycle()
             if (p != null) {
@@ -434,11 +481,12 @@ class SeckillEngine(private val context: Context) {
     private suspend fun refreshUntilTarget(
         a11y: AutoBuyAccessibilityService,
         config: SeckillConfig,
-        now: () -> Long
+        now: () -> Long,
+        color: Int
     ) {
         val startAt = config.targetTimeMs - refreshLeadMs
         if (now() < startAt) {
-            val onConfirm = a11y.hasDesc(submitKeywords, contains = true)
+            val onConfirm = isOnConfirmPage(a11y, color)
             LogBus.add(
                 if (onConfirm) "确认订单页已就位，开卖前 5 秒开始刷新（还有 ${(startAt - now()) / 1000}s）"
                 else "尚未进入确认订单页，开卖后会自动重试（还有 ${(startAt - now()) / 1000}s）"
@@ -490,7 +538,7 @@ class SeckillEngine(private val context: Context) {
         var nextRefreshAt = 0L
 
         while (now() < deadline) {
-            if (!a11y.hasDesc(submitKeywords, contains = true)) {
+            if (!isOnConfirmPage(a11y, settleColor)) {
                 // 已进入支付/收银台 → 提交成功
                 if (isOnPayPage(a11y)) return true
                 if (isRiskPage(a11y)) {
@@ -519,7 +567,7 @@ class SeckillEngine(private val context: Context) {
                     offConfirmSince = 0L
                     LogBus.add("持续不在确认页，尝试快速就位...")
                     navigateToConfirm(a11y, pkg, settleText, settleColor, pkgWaitSeconds = 3, fast = true)
-                    waitForConfirm(a11y, confirmReadyWaitMs)
+                    waitForConfirm(a11y, confirmReadyWaitMs, settleColor)
                 }
                 delay(150)
                 continue
@@ -531,6 +579,12 @@ class SeckillEngine(private val context: Context) {
             // 1) 点提交：文字/描述优先，取不到描述用颜色兜底
             if (clickSubmit(a11y, submitKeywords, settleColor)) {
                 submitClicks++
+                // 京东确认页的按钮是「立即支付」：点一次就会下单并拉起支付页。
+                // 再点会落在支付页的按钮上（小额免密有被直接扣款的风险），所以只点一次。
+                if (config.platform == Platform.JD) {
+                    LogBus.add("已点击京东「立即支付」，请到京东完成付款")
+                    return true
+                }
                 if (submitClicks == 1 || submitClicks % 10 == 0) LogBus.add("点击提交（第 $submitClicks 次）")
                 // 按钮可用（不是「未开售/￥0」）才算有效提交。
                 // 淘宝 Weex 的「暂时不能购买/￥0」是 text，必须 text + desc 都判。
@@ -557,7 +611,7 @@ class SeckillEngine(private val context: Context) {
         LogBus.add("提交窗口结束（共点击提交 $submitClicks 次，刷新 $refreshCount 次）")
         // 窗口结束时点过提交且已离开确认页，仍按成功处理，交回查确认；
         // 但还在确认页/未开售状态时不能算提交成功
-        return submitClicks > 0 && (isOnPayPage(a11y) || !isOnConfirmPage(a11y))
+        return submitClicks > 0 && (isOnPayPage(a11y) || !isOnConfirmPage(a11y, settleColor))
     }
 
     /** 点一次提交：文字/描述优先，取不到描述用颜色兜底（淘宝 Weex 提交按钮同为橙色、同在右下）。 */
@@ -573,10 +627,14 @@ class SeckillEngine(private val context: Context) {
     }
 
     /** 等待确认订单页就绪（出现「提交订单/立即支付」）；就绪返回 true。 */
-    private suspend fun waitForConfirm(a11y: AutoBuyAccessibilityService, timeoutMs: Long): Boolean {
+    private suspend fun waitForConfirm(
+        a11y: AutoBuyAccessibilityService,
+        timeoutMs: Long,
+        color: Int
+    ): Boolean {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
-            if (a11y.hasDesc(submitKeywords, contains = true)) return true
+            if (isOnConfirmPage(a11y, color)) return true
             delay(120)
         }
         return false

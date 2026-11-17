@@ -51,4 +51,45 @@ object ImageMatcher {
         if (count < minCount) return null
         return Point((sumX / count).toInt(), (sumY / count).toInt())
     }
+
+    /**
+     * 底部区域里最长的一段连续同色像素，占屏幕宽度的比例（0~1）。
+     *
+     * 用来区分两种按钮：购物车的「去结算」只在右下角（一段约 0.3 宽），
+     * 确认订单页的「立即支付 / 提交订单」是整行通栏（接近 1.0 宽）。
+     * 京东购物车没有任何文字节点，只能靠这个判断「现在是不是已经在确认页」。
+     */
+    fun longestColorRun(
+        screen: Bitmap,
+        regionFrac: FloatArray,
+        target: Int,
+        tolerance: Int
+    ): Float {
+        val w = screen.width
+        val h = screen.height
+        val l = (regionFrac[0] * w).toInt().coerceIn(0, w - 1)
+        val r = (regionFrac[2] * w).toInt().coerceIn(l + 1, w)
+        val t = (regionFrac[1] * h).toInt().coerceIn(0, h - 1)
+        val b = (regionFrac[3] * h).toInt().coerceIn(t + 1, h)
+        val tr = Color.red(target)
+        val tg = Color.green(target)
+        val tb = Color.blue(target)
+        var best = 0
+        for (y in t until b) {
+            var run = 0
+            for (x in l until r) {
+                val p = screen.getPixel(x, y)
+                val match = abs(Color.red(p) - tr) <= tolerance &&
+                    abs(Color.green(p) - tg) <= tolerance &&
+                    abs(Color.blue(p) - tb) <= tolerance
+                if (match) {
+                    run++
+                    if (run > best) best = run
+                } else {
+                    run = 0
+                }
+            }
+        }
+        return best.toFloat() / w
+    }
 }
