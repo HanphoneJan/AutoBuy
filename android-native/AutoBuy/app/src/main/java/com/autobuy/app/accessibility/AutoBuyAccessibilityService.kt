@@ -117,6 +117,51 @@ class AutoBuyAccessibilityService : AccessibilityService() {
             values.any { if (contains) d.contains(it) else d == it }
         } != null
 
+    /**
+     * 读取某个屏幕区域内的文字/描述，按从上到下、从左到右排序。
+     * 用于读购物车底部结算栏（京东自绘，只有这里的「合计 ¥xx」能反映是否真的勾上了商品）。
+     */
+    fun textsInRegion(regionFrac: FloatArray): List<String> {
+        val dm = resources.displayMetrics
+        val w = dm.widthPixels
+        val h = dm.heightPixels
+        val left = (regionFrac[0] * w).toInt()
+        val top = (regionFrac[1] * h).toInt()
+        val right = (regionFrac[2] * w).toInt()
+        val bottom = (regionFrac[3] * h).toInt()
+
+        val roots = try {
+            windows.mapNotNull { it.root }
+        } catch (_: Exception) {
+            emptyList()
+        }.ifEmpty {
+            listOfNotNull(rootInActiveWindow)
+        }
+
+        val hits = ArrayList<Pair<Rect, String>>()
+        for (root in roots) {
+            val queue = ArrayDeque<AccessibilityNodeInfo>()
+            queue.add(root)
+            var guard = 0
+            while (queue.isNotEmpty() && guard < 8000) {
+                val n = queue.removeFirst()
+                guard++
+                val txt = (n.text ?: n.contentDescription)?.toString()
+                if (!txt.isNullOrBlank()) {
+                    val rect = Rect()
+                    n.getBoundsInScreen(rect)
+                    if (rect.centerX() in left until right && rect.centerY() in top until bottom) {
+                        hits.add(rect to txt)
+                    }
+                }
+                for (i in 0 until n.childCount) {
+                    n.getChild(i)?.let { queue.add(it) }
+                }
+            }
+        }
+        return hits.sortedWith(compareBy({ it.first.top }, { it.first.left })).map { it.second }
+    }
+
     /** 按文字或描述点击（合并匹配，兼容「提交订单 / 立即支付」等不同文案）。 */
     fun clickByTextOrDesc(values: List<String>, contains: Boolean = true, timeoutMs: Long = 800): Boolean {
         val deadline = System.currentTimeMillis() + timeoutMs

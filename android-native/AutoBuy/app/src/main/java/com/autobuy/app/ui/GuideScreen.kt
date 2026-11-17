@@ -68,7 +68,7 @@ fun GuideScreen(onGoSeckill: () -> Unit) {
                 StepRow(
                     index = 2,
                     title = "在淘宝/京东里登录并加入购物车",
-                    desc = "打开目标 App 登录，把要抢的商品加入购物车；预约/预售商品请先完成预约"
+                    desc = "把要抢的商品加入购物车（购物车里只留它最稳，其他商品可能被一起结算）；预约/预售商品请先完成预约"
                 )
                 RowDivider()
                 StepRow(
@@ -95,7 +95,7 @@ fun GuideScreen(onGoSeckill: () -> Unit) {
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    AutoItem("到点前自动勾选商品，进入结算页")
+                    AutoItem("到点前自动勾选商品（已勾着就不动），确认真的勾上才结算")
                     AutoItem("开卖前 5 秒起用「号码保护」开关刷新开卖状态")
                     AutoItem("到点自动点击「提交订单 / 立即支付」，未开售则留在结算页继续刷新")
                     AutoItem("提交后请尽快回到 App 完成付款")

@@ -16,6 +16,8 @@ import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
  * 抢购引擎（移动端流程，区别于网页端）：
@@ -57,6 +59,9 @@ class SeckillEngine(private val context: Context) {
     private var lastShotError = 0
     private var noScreenshotLogged = false
 
+    /** 已被证实点开的是商品图（不是复选框）的坐标，下次直接跳过，别在抢购窗口里反复踩。 */
+    private val badCheckboxPoints = ArrayList<Point>()
+
     /** 点完提交后多久之内离开确认页才算「提交成功跳转」：避免把页面加载中误判为已提交 */
     private val leaveConfirmGraceMs = 5_000L
     /** 有效提交后，确认页消失需要持续多久才认成功（排除节点重建/跳转渲染的瞬间） */
@@ -65,6 +70,17 @@ class SeckillEngine(private val context: Context) {
     private val confirmReadyWaitMs = 3_000L
     /** 开卖前多久开始用「号码保护」刷新（不提前太久，避免长时间高频切换） */
     private val refreshLeadMs = 5_000L
+
+    /** 购物车底部结算栏里的合计金额，如「合计：¥0.00」。 */
+    private val totalRegex = Regex("""[¥￥]\s*([0-9]+(?:\.[0-9]{1,2})?)""")
+    private val totalLabelKeywords = listOf("合计", "总计")
+
+    /** 平台风控/安全验证页（京东验证、滑块等）：程序点了没用，只能人工过验证。 */
+    private val riskKeywords = listOf(
+        "检测到安全风险", "安全验证", "京东验证", "验证一下，购物无忧",
+        "滑动验证", "拖动滑块", "请完成验证", "账号存在风险"
+    )
+    private var riskLogged = false
 
     private val privacyKeywords = listOf("号码保护", "隐私号码", "隐私保护")
     private val submitKeywords = listOf("立即支付", "提交订单")
@@ -89,6 +105,8 @@ class SeckillEngine(private val context: Context) {
             LogBus.setStage(Stage.IDLE)
             return
         }
+        badCheckboxPoints.clear()
+        riskLogged = false
 
         LogBus.setStage(Stage.PREPARE)
         LogBus.add("网络时间校准中...")
@@ -271,26 +289,29 @@ class SeckillEngine(private val context: Context) {
             LogBus.add("未等到目标 App（当前：${a11y.currentPackage() ?: "未知"}；${a11y.windowSummary()}）")
             return false
         }
+        if (isRiskPage(a11y)) {
+            warnRiskOnce()
+            return false
+        }
 
-        // 打开购物车
+        // 打开购物车（可能还停在商品详情页，先退回来）
+        if (isProductDetailPage(a11y)) {
+            LogBus.add("当前在商品详情页，先退回购物车")
+            backToCart(a11y)
+        }
         a11y.clickByTextOrDesc(listOf("购物车"), contains = true, timeoutMs = if (fast) 600 else 1500)
         delay(if (fast) 800 else 1500)
 
-        // 勾选第一个未选中的商品（图像识别 + 环形校验，取最上方）
-        val selectDeadline = System.currentTimeMillis() + if (fast) 2000 else 6000
-        val point = stepTemplate(
-            a11y, checkboxTemplate, checkboxRegion, 0.90f, true, selectDeadline, "勾选第一个商品"
-        )
-        if (point == null) {
-            LogBus.add("未找到购物车勾选模板（超时）；图像识别需 Android 11+，且购物车布局需与模板一致")
-        } else {
-            delay(if (fast) 300 else 500)
-            // 商品本来就勾选时，这一下会把它点掉 → 结算按钮变灰。点回恢复一次（#27）
-            if (!hasSettleColor(a11y, settleColor)) {
-                LogBus.add("勾选后结算按钮仍不可用，重新点一次复选框")
-                a11y.tap(point.x.toFloat(), point.y.toFloat())
-                delay(if (fast) 300 else 600)
-            }
+        // 勾选商品：已勾着就不动（再点一下会把勾去掉），点完用底部「合计」校验
+        if (!selectFirstItem(a11y, checkboxTemplate, fast)) {
+            return false
+        }
+
+        // 合计还是 ¥0.00 说明没选中商品：京东的「去结算」永远是红色，
+        // 点它只会白等一轮再把人带进商品详情页（#29 空转）
+        if (!cartHasSelection(a11y)) {
+            LogBus.add("购物车合计 ¥0.00：没有选中商品，暂不点结算（确认商品可勾选/在售）")
+            return false
         }
 
         // 点击「结算 / 去结算」
@@ -307,11 +328,196 @@ class SeckillEngine(private val context: Context) {
             w++
         }
         if (!a11y.hasDesc(submitKeywords, contains = true)) {
-            LogBus.add("没有进入确认订单页（商品可能未勾选/已下架）")
+            LogBus.add(
+                "没有进入确认订单页（商品可能未勾选/已下架）；当前：${a11y.currentPackage() ?: "未知"}，" +
+                    "合计 ${cartTotal(a11y)?.let { "¥${money(it)}" } ?: "未读到"}"
+            )
             return false
         }
         return true
     }
+
+    /**
+     * 当前是否在商品详情页（勾选点偏、点进商品图时会到这里，不处理就会在详情页和购物车之间反复跳）。
+     *
+     * strict=true 要求「立即购买」和「加入购物车」同时存在：京东首页商品流里也有「加入购物车」，
+     * 只认一个会在首页被误判、把用户一路退出 App。刚点完复选框时用 strict=false 更灵敏。
+     */
+    private fun isProductDetailPage(a11y: AutoBuyAccessibilityService, strict: Boolean = true): Boolean {
+        val hasBuy = a11y.hasText(listOf("立即购买"), contains = false)
+        if (strict) return hasBuy && a11y.hasText(listOf("加入购物车"), contains = false)
+        return hasBuy || a11y.hasText(listOf("加入购物车"), contains = false)
+    }
+
+    /** 从商品详情页退回购物车；退不回去返回 false。 */
+    private suspend fun backToCart(a11y: AutoBuyAccessibilityService): Boolean {
+        var tries = 0
+        while (tries < 3 && isProductDetailPage(a11y, strict = false)) {
+            a11y.back()
+            tries++
+            delay(700)
+        }
+        return !isProductDetailPage(a11y, strict = false)
+    }
+
+    /** 购物车底部结算栏的文字（合计金额、去结算等都在这里）。 */
+    private fun cartBarTexts(a11y: AutoBuyAccessibilityService): List<String> =
+        a11y.textsInRegion(settleRegion)
+
+    /** 是否停在平台的风控/安全验证页（这类页面点什么都推进不了）。 */
+    private fun isRiskPage(a11y: AutoBuyAccessibilityService): Boolean =
+        a11y.hasText(riskKeywords, contains = true)
+
+    private fun warnRiskOnce() {
+        if (riskLogged) return
+        riskLogged = true
+        LogBus.add("检测到平台安全验证（风控），请在 App 里手动完成验证后重新开始；本轮不继续")
+    }
+
+    /**
+     * 购物车合计金额（元）；读不到返回 null。
+     *
+     * 京东购物车是自绘的，只有底部「合计 ¥xx」能说明是否真的勾上了商品：
+     * 结算按钮不管有没有选中都是红色，颜色判断不可靠（AGENTS 里也记了这点）。
+     */
+    private fun cartTotal(a11y: AutoBuyAccessibilityService): Double? {
+        val texts = cartBarTexts(a11y)
+        if (texts.isEmpty()) return null
+        val labelAt = texts.indexOfFirst { t -> totalLabelKeywords.any { t.contains(it) } }
+        // 「合计」和金额可能是两个节点：优先取「合计」之后的金额
+        val afterLabel = if (labelAt >= 0) texts.drop(labelAt) else emptyList()
+        for (t in afterLabel) {
+            totalRegex.find(t)?.groupValues?.getOrNull(1)?.toDoubleOrNull()?.let { return it }
+        }
+        // 没有「合计」标签时取最右侧的金额（结算栏里合计是最靠右的那个）
+        if (labelAt < 0) {
+            for (t in texts.asReversed()) {
+                totalRegex.find(t)?.groupValues?.getOrNull(1)?.toDoubleOrNull()?.let { return it }
+            }
+        }
+        return null
+    }
+
+    /** 购物车是否已有选中商品；读不到合计时按未知处理（不拦流程）。 */
+    private fun cartHasSelection(a11y: AutoBuyAccessibilityService): Boolean {
+        val total = cartTotal(a11y) ?: return true
+        return total > 0.0
+    }
+
+    private fun money(v: Double): String = String.format(Locale.US, "%.2f", v)
+
+    /**
+     * 让购物车里有选中的商品。成功返回 true。
+     *
+     * 两个坑（#27 / #29）：
+     *  1. 商品本来就勾着时再点一下会取消勾选，结算按钮随之变灰 → 先读合计，已选中就不动；
+     *  2. 商品图里也有圆形（镜头、旋钮），模板会命中它们，点下去进商品详情页 →
+     *     候选按 y 逐个试，点完看是否进了详情页（进了就退回）、看合计有没有变大。
+     */
+    private suspend fun selectFirstItem(
+        a11y: AutoBuyAccessibilityService,
+        templatePath: String,
+        fast: Boolean
+    ): Boolean {
+        val before = cartTotal(a11y)
+        if (before != null && before > 0.0) {
+            LogBus.add("购物车已有选中商品（合计 ¥${money(before)}），跳过勾选")
+            return true
+        }
+        val tmpl = loadAsset(templatePath)
+        if (tmpl == null) {
+            LogBus.add("模板缺失：$templatePath")
+            return before == null
+        }
+
+        val deadline = System.currentTimeMillis() + if (fast) 2_500 else 6_000
+        val maxTaps = if (fast) 2 else 3
+        val tried = ArrayList<Point>()
+        var taps = 0
+        var lastW = 0
+        var lastH = 0
+
+        while (System.currentTimeMillis() < deadline && taps < maxTaps) {
+            val shot = screenshot(a11y)
+            if (shot == null) {
+                delay(300)
+                continue
+            }
+            lastW = shot.width
+            lastH = shot.height
+            val cands = ImageMatcher.findAll(
+                shot, tmpl, checkboxRegion, 0.90f, scales = checkboxScales
+            ) { cx, cy, tw -> ImageMatcher.isRingLike(shot, cx, cy, tw) }
+
+            // 候选处已经是实心彩色（勾选态或商品图）就不用点了：
+            // 未勾选的复选框是白底灰环，灰环模板不该命中实心色块
+            val usable = cands.filter { m ->
+                val r = (tmpl.width * m.scale * 0.42f).roundToInt().coerceAtLeast(6)
+                !ImageMatcher.isCheckedMark(shot, m.point.x, m.point.y, r)
+            }
+            shot.recycle()
+
+            if (usable.isEmpty()) {
+                delay(200)
+                continue
+            }
+            for (m in usable) {
+                if (taps >= maxTaps) break
+                if (tried.any { abs(it.x - m.point.x) <= 12 && abs(it.y - m.point.y) <= 12 }) continue
+                if (badCheckboxPoints.any {
+                        abs(it.x - m.point.x) <= 12 && abs(it.y - m.point.y) <= 12
+                    }
+                ) continue
+                tried.add(m.point)
+                taps++
+                a11y.tap(m.point.x.toFloat(), m.point.y.toFloat())
+                LogBus.add(
+                    "勾选候选 @ ${m.point.x},${m.point.y}（匹配 ${(m.score * 100).toInt()}%，缩放 ${m.scale}）"
+                )
+                delay(if (fast) 350 else 500)
+
+                if (isProductDetailPage(a11y, strict = false)) {
+                    LogBus.add("点到了商品图而不是复选框（进入商品详情），返回购物车换下一个候选")
+                    badCheckboxPoints.add(m.point)
+                    backToCart(a11y)
+                    delay(300)
+                    // 退回后页面可能滚动过，重新截图再找候选
+                    break
+                }
+                val radius = (tmpl.width * m.scale * 0.42f).roundToInt().coerceAtLeast(6)
+                val checked = screenshot(a11y)?.let { s ->
+                    val ok = ImageMatcher.isCheckedMark(s, m.point.x, m.point.y, radius)
+                    s.recycle()
+                    ok
+                } ?: false
+                val after = cartTotal(a11y)
+                when {
+                    // 京东购物车没有任何文字节点，只能靠「复选框变成实心品牌色」判断
+                    checked -> {
+                        LogBus.add("已勾选商品（复选框已变色）")
+                        return true
+                    }
+                    after != null && after > 0.0 -> {
+                        LogBus.add("已勾选商品（合计 ¥${money(after)}）")
+                        return true
+                    }
+                    after != null -> LogBus.add("合计仍为 ¥0.00，这个候选不是复选框")
+                    else -> LogBus.add("候选点完复选框没变色，换下一个候选")
+                }
+            }
+            delay(120)
+        }
+
+        if (lastW > 0) {
+            LogBus.add(
+                "勾选未生效：屏幕 ${lastW}x$lastH，区域 x${(checkboxRegion[0] * 100).toInt()}%~" +
+                    "${(checkboxRegion[2] * 100).toInt()}%，模板 ${tmpl.width}x${tmpl.height}，" +
+                    "阈值 0.90，最高 ${(ImageMatcher.lastBestScore * 100).toInt()}%"
+            )
+        }
+        return cartHasSelection(a11y)
+    }
+
 
     /** 结算按钮：先试文字（京东），再用颜色（淘宝 Weex）。 */
     private suspend fun clickSettle(
@@ -321,6 +527,11 @@ class SeckillEngine(private val context: Context) {
         deadline: Long
     ): Boolean {
         while (System.currentTimeMillis() < deadline) {
+            // 商品详情页右下角也有通栏红按钮（立即购买），不能当结算点
+            if (isProductDetailPage(a11y, strict = false)) {
+                LogBus.add("当前在商品详情页，不点结算")
+                return false
+            }
             if (a11y.clickByTextOrDesc(texts, contains = true, timeoutMs = 150)) {
                 LogBus.add("点击「${texts.first()}」（文字）")
                 return true
@@ -406,6 +617,10 @@ class SeckillEngine(private val context: Context) {
             if (!a11y.hasDesc(submitKeywords, contains = true)) {
                 // 已进入支付/收银台 → 提交成功
                 if (isOnPayPage(a11y)) return true
+                if (isRiskPage(a11y)) {
+                    warnRiskOnce()
+                    return false
+                }
                 if (validSubmitAt > 0 && now() - validSubmitAt <= leaveConfirmGraceMs) {
                     // 点过有效提交后确认页消失，但要持续一段时间才认，
                     // 避免页面跳转/节点重建的瞬间被当成提交成功（#26 假成功）
@@ -415,6 +630,14 @@ class SeckillEngine(private val context: Context) {
                 // 持续不在确认页：只有本轮从没进过确认页才重新就位；
                 // 进过确认页就说明是页面自己走了（正在跳转/已提交），留在原地等，不退回购物车
                 if (offConfirmSince == 0L) offConfirmSince = now()
+                // 误进了商品详情页：马上退回购物车，别干等 4 秒
+                if (isProductDetailPage(a11y)) {
+                    LogBus.add("当前在商品详情页，退回购物车")
+                    backToCart(a11y)
+                    offConfirmSince = 0L
+                    delay(200)
+                    continue
+                }
                 if (!reachedConfirm && now() - offConfirmSince >= 4_000 && now() - lastNavAt > 3_000) {
                     lastNavAt = now()
                     offConfirmSince = 0L
@@ -489,63 +712,6 @@ class SeckillEngine(private val context: Context) {
         val p = ImageMatcher.findColorCentroid(shot, settleRegion, color, 70)
         shot.recycle()
         return p
-    }
-
-    private suspend fun stepTemplate(
-        a11y: AutoBuyAccessibilityService,
-        asset: String,
-        region: FloatArray,
-        threshold: Float,
-        topmost: Boolean,
-        deadline: Long,
-        label: String
-    ): Point? {
-        val tmpl = loadAsset(asset)
-        if (tmpl == null) {
-            LogBus.add("模板缺失：$asset")
-            return null
-        }
-        var lastW = 0
-        var lastH = 0
-        while (System.currentTimeMillis() < deadline) {
-            // 截图失败不直接放弃：等一小会儿再试（例如系统限频或页面刚切换）
-            val shot = screenshot(a11y)
-            if (shot == null) {
-                delay(300)
-                continue
-            }
-            lastW = shot.width
-            lastH = shot.height
-            val m = ImageMatcher.findTemplate(
-                shot, tmpl, region, threshold, topmost, scales = checkboxScales
-            ) { cx, cy, tw ->
-                ImageMatcher.isRingLike(shot, cx, cy, (tw * 44 / 100).coerceAtLeast(6))
-            }
-            shot.recycle()
-            if (m != null) {
-                a11y.tap(m.point.x.toFloat(), m.point.y.toFloat())
-                LogBus.add(
-                    "$label @ ${m.point.x},${m.point.y}（屏幕 ${lastW}x$lastH，" +
-                        "匹配 ${(m.score * 100).toInt()}%，缩放 ${m.scale}）"
-                )
-                return m.point
-            }
-            delay(60)
-        }
-        LogBus.add(
-            "$label 未命中：屏幕 ${lastW}x$lastH，区域 x${(region[0] * 100).toInt()}%~${(region[2] * 100).toInt()}%，" +
-                "模板 ${tmpl.width}x${tmpl.height}，阈值 $threshold，" +
-                "最高 ${(ImageMatcher.lastBestScore * 100).toInt()}%"
-        )
-        return null
-    }
-
-    /** 结算按钮是否可用（按平台色判断，淘宝橙 / 京东红；不可用时通常是灰色）。 */
-    private suspend fun hasSettleColor(a11y: AutoBuyAccessibilityService, color: Int): Boolean {
-        val shot = screenshot(a11y) ?: return false
-        val p = ImageMatcher.findColorCentroid(shot, settleRegion, color, 70)
-        shot.recycle()
-        return p != null
     }
 
     /**

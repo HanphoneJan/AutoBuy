@@ -12,8 +12,8 @@ android {
         applicationId = "com.autobuy.app"
         minSdk = 24
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.3.5"
+        versionCode = 9
+        versionName = "0.3.6"
     }
 
     buildFeatures {
