@@ -93,6 +93,9 @@ export ANDROID_HOME=~/Android/Sdk
 发布：改 `versionName`/`versionCode` → `assembleRelease` → 用 GitHub API 建 Release（tag `vX.Y.Z`，target `main`）并上传 `app-release.apk`。
 App 内「检查更新」读取 `https://api.github.com/repos/HanphoneJan/AutoBuy/releases/latest`，与 `BuildConfig.VERSION_NAME` 比较。
 
+调试机（可用 adb 直接验证）：Redmi Note 12 Turbo（23049RAD8C），1080x2400，Android 15，装有淘宝/京东。
+`adb shell am start -a android.intent.action.VIEW -d "openapp.jdmobile://virtual?params=%7B%22category%22%3A%22jump%22%2C%22des%22%3A%22cart%22%7D"` 可直接打开京东购物车；**跑抢购任务有真实下单风险，只在确认购物车里的商品不可购买时测试**。
+
 ### 已知问题 / 注意事项（重要）
 - **无障碍服务会被系统关闭**（尤其**重装/更新 App 后**、被省电清理、重启后）。抢购前必须确认 App 内显示「已开启」；**抢购前不要重装或强制停止 App**。
 - 就绪判断用**服务实例**（`AutoBuyAccessibilityService.instance`）而非读 `Settings`（MIUI 下不准）。用 adb 写 `enabled_accessibility_services` 只是临时手段，**用户需在系统设置里手动开启**才稳。
