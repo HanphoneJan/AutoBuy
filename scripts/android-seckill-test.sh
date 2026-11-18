@@ -7,7 +7,8 @@
 # 用法：
 #   scripts/android-seckill-test.sh prepare      # 把测试商品加进购物车（会自动勾选）
 #   scripts/android-seckill-test.sh run          # 跑一轮，到点前 8 秒自动停（不会下单）
-#   scripts/android-seckill-test.sh run --submit # 跑到点（会生成真实待付款订单，自己取消）
+#   scripts/android-seckill-test.sh run --at "12:00:00"   # 把目标时间设成某个开售时间（到点前停）
+#   scripts/android-seckill-test.sh run --submit --at "12:00:00"  # 跑到点（会生成真实订单，自己取消）
 #   scripts/android-seckill-test.sh logs         # 只看 AutoBuy 日志
 #
 # 前置：手机已装 AutoBuy 0.3.8+、无障碍已开启、京东已登录。
@@ -128,8 +129,26 @@ prepare() {
 
 # ---------------------------------------------------------------------- run
 run() {
-  local submit=0
-  [ "${1:-}" = "--submit" ] && submit=1
+  local submit=0 at=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --submit) submit=1; shift ;;
+      --at) at="${2:-}"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+
+  # --at：把「现在+1分」对准到指定开售时间。App 只有「现在+1分」按钮，
+  # 所以先睡到 (开售时间 - 60s) 再点，目标时间就正好等于开售时间。
+  if [ -n "$at" ]; then
+    local target_epoch now_epoch wait_s
+    target_epoch="$(date -d "$at" +%s 2>/dev/null)" || die "--at 格式应为 HH:MM 或 HH:MM:SS"
+    now_epoch="$(date +%s)"
+    wait_s=$(( target_epoch - 60 - now_epoch ))
+    [ "$wait_s" -gt 0 ] || die "开售时间 $at 距现在不到 1 分钟，来不及设置"
+    say "等到开售前 60 秒（目标 $at），约 $((wait_s / 60)) 分 $((wait_s % 60)) 秒"
+    sleep "$wait_s"
+  fi
   need_device
   [ -n "$(app_version)" ] || die "设备上没装 $PKG"
   a11y_ready || enable_a11y
@@ -172,7 +191,7 @@ logs() { $ADB logcat -d -s AutoBuy | tail -40; }
 need_device
 case "${1:-}" in
   prepare) prepare ;;
-  run) shift; run "${1:-}" ;;
+  run) shift; run "$@" ;;
   logs) logs ;;
-  *) echo "用法: $0 {prepare|run [--submit]|logs}"; exit 1 ;;
+  *) echo "用法: $0 {prepare|run [--submit] [--at HH:MM[:SS]]|logs}"; exit 1 ;;
 esac
