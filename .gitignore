@@ -149,6 +149,9 @@ msedgedriver*
 # Logs
 *.log
 
+# 夹具录制的真机截图（体积大，不入库；dump XML 保留）
+testdata/dumps/*.png
+
 # Temporary files
 *.tmp
 *.bak

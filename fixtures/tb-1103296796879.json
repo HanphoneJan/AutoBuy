@@ -1,0 +1,22 @@
+{
+  "id": "tb-1103296796879",
+  "platform": "taobao",
+  "itemId": "1103296796879",
+  "deepLink": "taobao://item.taobao.com/item.htm?id=1103296796879",
+  "kind": "timed_full",
+  "saleTime": "2026-11-25T16:00:00+08:00",
+  "bannerText": "即将开始，11.25 16:00开售",
+  "title": "Meki咩绮「灵魂倒影」系列BJD限定吊卡预售 鸦&鸢",
+  "shipPromise": "承诺120天内发货",
+  "cartCount": "100人加购",
+  "sold": "0",
+  "presaleAttr": true,
+  "prices": [
+    258.0,
+    298.0
+  ],
+  "evidence": "testdata/dumps/tb-1103296796879-detail.xml",
+  "state": "live",
+  "collectedAt": "2026-11-22T20:39:02+08:00",
+  "updatedAt": "2026-11-22T20:48:48+08:00"
+}
