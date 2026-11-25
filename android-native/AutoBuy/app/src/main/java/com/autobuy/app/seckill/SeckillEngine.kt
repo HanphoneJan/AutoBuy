@@ -2,6 +2,7 @@ package com.autobuy.app.seckill
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
@@ -81,7 +82,7 @@ class SeckillEngine(private val context: Context) {
     /** 平台风控/安全验证页（京东验证、滑块等）：程序点了没用，只能人工过验证。 */
     private val riskKeywords = listOf(
         "检测到安全风险", "安全验证", "京东验证", "验证一下，购物无忧",
-        "滑动验证", "拖动滑块", "请完成验证", "账号存在风险"
+        "滑动验证", "拖动滑块", "请完成验证", "账号存在风险", "验证码拦截"
     )
     private var riskLogged = false
 
@@ -93,7 +94,7 @@ class SeckillEngine(private val context: Context) {
     )
 
     /** 真正跳到支付/收银台才有的文案（不能放「付款」/「立即付款」：确认页有「实付款」，待付款列表有「立即付款」）。 */
-    private val payPageKeywords = listOf("收银台", "确认付款", "支付订单", "订单提交成功")
+    private val payPageKeywords = listOf("收银台", "确认付款", "支付订单", "订单提交成功", "使用密码")
 
     /** 订单列表的空态文案。 */
     private val emptyOrderKeywords = listOf("暂无订单", "没有相关订单", "暂无相关订单", "快去挑选", "空空如也")
@@ -168,7 +169,7 @@ class SeckillEngine(private val context: Context) {
         }
 
         LogBus.setStage(Stage.REFRESH)
-        refreshUntilTarget(a11y, config, ::now, settleColor)
+        refreshUntilTarget(a11y, config, ::now, settleColor, pkg)
 
         LogBus.setStage(Stage.SUBMIT)
         val submitted = submitWithRetry(a11y, config, ::now, pkg, settleText, settleColor)
@@ -221,13 +222,18 @@ class SeckillEngine(private val context: Context) {
             return false
         }
         // 打开订单列表回查
-        if (platform == Platform.TAOBAO) {
+        val homeClicked = if (platform == Platform.TAOBAO) {
             a11y.clickByTextOrDesc(listOf("我的淘宝"), contains = false, timeoutMs = 1500)
         } else {
             a11y.clickByTextOrDesc(listOf("我的"), contains = false, timeoutMs = 1500)
         }
         delay(1500)
-        a11y.clickByTextOrDesc(listOf("待付款"), contains = false, timeoutMs = 2000)
+        val ordersClicked = a11y.clickByTextOrDesc(listOf("待付款"), contains = false, timeoutMs = 2000)
+        if (!homeClicked || !ordersClicked) {
+            // 收银台/弹窗占着页面时打不开订单列表：这是「没查成」，不是「没订单」
+            LogBus.add("回查：打不开「待付款」（页面被占用），请手动到待付款核对")
+            return false
+        }
         delay(2500)
         if (a11y.hasText(emptyOrderKeywords, contains = true) ||
             a11y.hasDesc(emptyOrderKeywords, contains = true)
@@ -287,6 +293,23 @@ class SeckillEngine(private val context: Context) {
         a11y.hasText(payPageKeywords, contains = true) ||
             a11y.hasDesc(payPageKeywords, contains = true)
 
+    /** 把目标 App 拉到前台。无障碍服务在前台任务豁免内，可直接 startActivity。 */
+    private fun launchTargetApp(pkg: String): Boolean {
+        val intent = context.packageManager.getLaunchIntentForPackage(pkg)
+        if (intent == null) {
+            LogBus.add("找不到目标 App：$pkg")
+            return false
+        }
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+        return try {
+            context.startActivity(intent)
+            true
+        } catch (e: Exception) {
+            LogBus.add("打开目标 App 失败：${e.message}")
+            false
+        }
+    }
+
     /** 自动就位：切到购物车 → 校验已勾选 → 结算 → 确认订单页。fast 用于到点后的快速重试。 */
     private suspend fun navigateToConfirm(
         a11y: AutoBuyAccessibilityService,
@@ -296,13 +319,22 @@ class SeckillEngine(private val context: Context) {
         pkgWaitSeconds: Int = 15,
         fast: Boolean = false
     ): Boolean {
-        if (isOnConfirmPage(a11y, settleColor)) return true
+        // 只有已经在目标 App 里，「确认订单页」的判断才可信；
+        // 否则会把本应用自己的宽按钮当成确认页，跳过就位（真机踩过）
+        if (a11y.currentPackage() == pkg && isOnConfirmPage(a11y, settleColor)) return true
+
+        // 主动把目标 App 拉到前台：无障碍服务启动 Activity 不受后台限制
+        if (a11y.currentPackage() != pkg) {
+            LogBus.add("目标 App 不在前台（当前：${a11y.currentPackage() ?: "未知"}），正在打开…")
+            launchTargetApp(pkg)
+            delay(if (fast) 1200 else 1800)
+        }
 
         var waited = 0
         while (a11y.currentPackage() != pkg && waited < pkgWaitSeconds) {
-            if (waited == 0 && pkgWaitSeconds > 3) {
+            if (waited == 2 && pkgWaitSeconds > 3) {
                 LogBus.add(
-                    "请切换到目标 App 并停留在购物车页（当前：${a11y.currentPackage() ?: "未知"}；${a11y.windowSummary()}）..."
+                    "未能自动切到目标 App，请手动切到购物车页（当前：${a11y.currentPackage() ?: "未知"}；${a11y.windowSummary()}）..."
                 )
             }
             delay(1000)
@@ -482,19 +514,22 @@ class SeckillEngine(private val context: Context) {
         a11y: AutoBuyAccessibilityService,
         config: SeckillConfig,
         now: () -> Long,
-        color: Int
+        color: Int,
+        pkg: String
     ) {
         val startAt = config.targetTimeMs - refreshLeadMs
         if (now() < startAt) {
-            val onConfirm = isOnConfirmPage(a11y, color)
+            val onConfirm = a11y.currentPackage() == pkg && isOnConfirmPage(a11y, color)
             LogBus.add(
                 if (onConfirm) "确认订单页已就位，开卖前 5 秒开始刷新（还有 ${(startAt - now()) / 1000}s）"
                 else "尚未进入确认订单页，开卖后会自动重试（还有 ${(startAt - now()) / 1000}s）"
             )
             while (now() < startAt) delay(50)
         }
-        val hasPrivacy = a11y.hasDesc(privacyKeywords, contains = true) ||
-            a11y.hasText(privacyKeywords, contains = true)
+        val hasPrivacy = a11y.currentPackage() == pkg && (
+            a11y.hasDesc(privacyKeywords, contains = true) ||
+                a11y.hasText(privacyKeywords, contains = true)
+            )
         if (!hasPrivacy) {
             LogBus.add("未发现「号码保护」开关，跳过刷新（到点直接提交）")
             while (now() < config.targetTimeMs) delay(50)
@@ -538,9 +573,21 @@ class SeckillEngine(private val context: Context) {
         var nextRefreshAt = 0L
 
         while (now() < deadline) {
+            // 收银台可能跳出目标 App（拉起支付），先判支付页再判包名
+            if (isOnPayPage(a11y)) return true
+            val cur = a11y.currentPackage()
+            // 窗口切换瞬间 currentPackage() 会返回 null，不能当成「离开了目标 App」
+            if (cur != null && cur != pkg) {
+                // 不在目标 App：绝不盲点，否则会把点击落在本应用自己的按钮上（真机踩过）
+                if (now() - lastNavAt > 3_000) {
+                    lastNavAt = now()
+                    LogBus.add("不在目标 App（当前：$cur），正在切回…")
+                    launchTargetApp(pkg)
+                }
+                delay(200)
+                continue
+            }
             if (!isOnConfirmPage(a11y, settleColor)) {
-                // 已进入支付/收银台 → 提交成功
-                if (isOnPayPage(a11y)) return true
                 if (isRiskPage(a11y)) {
                     warnRiskOnce()
                     return false

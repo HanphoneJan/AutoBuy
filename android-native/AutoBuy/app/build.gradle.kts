@@ -12,8 +12,8 @@ android {
         applicationId = "com.autobuy.app"
         minSdk = 24
         targetSdk = 35
-        versionCode = 11
-        versionName = "0.3.8"
+        versionCode = 12
+        versionName = "0.3.9"
     }
 
     buildFeatures {
@@ -58,4 +58,6 @@ dependencies {
     implementation(libs.navigation.compose)
     implementation(libs.coroutines.android)
     debugImplementation(libs.compose.ui.tooling)
+
+    testImplementation("junit:junit:4.13.2")
 }

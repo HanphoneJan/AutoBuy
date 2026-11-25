@@ -64,24 +64,48 @@ object ImageMatcher {
         regionFrac: FloatArray,
         target: Int,
         tolerance: Int
+    ): Float = longestRunInBox(
+        width = screen.width,
+        height = screen.height,
+        regionFrac = regionFrac,
+        pixelAt = { x, y -> screen.getPixel(x, y) },
+        target = target,
+        tolerance = tolerance
+    )
+
+    /**
+     * [longestColorRun] 的纯函数版本：只吃尺寸 + 取像素的 lambda，不碰 android.graphics，
+     * 所以能在 JVM 单元测试里跑（Bitmap / Color 在单测里是 stub，一调用就抛异常）。
+     *
+     * 连续段是**按行**统计的：`run` 必须声明在内层 `y` 循环里，每行从 0 开始。
+     * 否则「上一行行尾的连续段」会和「下一行行首的连续段」接起来，
+     * 算出的长度能超过屏幕宽度（例：宽 10，行尾 6 + 下一行行首 6 = 12/10 > 1），
+     * 把购物车「去结算」误判成确认页的通栏按钮 —— 那会点错「立即支付」直接下单。
+     */
+    fun longestRunInBox(
+        width: Int,
+        height: Int,
+        regionFrac: FloatArray,
+        pixelAt: (x: Int, y: Int) -> Int,
+        target: Int,
+        tolerance: Int
     ): Float {
-        val w = screen.width
-        val h = screen.height
-        val l = (regionFrac[0] * w).toInt().coerceIn(0, w - 1)
-        val r = (regionFrac[2] * w).toInt().coerceIn(l + 1, w)
-        val t = (regionFrac[1] * h).toInt().coerceIn(0, h - 1)
-        val b = (regionFrac[3] * h).toInt().coerceIn(t + 1, h)
-        val tr = Color.red(target)
-        val tg = Color.green(target)
-        val tb = Color.blue(target)
+        if (width <= 0 || height <= 0) return 0f
+        val l = (regionFrac[0] * width).toInt().coerceIn(0, width - 1)
+        val r = (regionFrac[2] * width).toInt().coerceIn(l + 1, width)
+        val t = (regionFrac[1] * height).toInt().coerceIn(0, height - 1)
+        val b = (regionFrac[3] * height).toInt().coerceIn(t + 1, height)
+        val tr = (target shr 16) and 0xFF
+        val tg = (target shr 8) and 0xFF
+        val tb = target and 0xFF
         var best = 0
         for (y in t until b) {
             var run = 0
             for (x in l until r) {
-                val p = screen.getPixel(x, y)
-                val match = abs(Color.red(p) - tr) <= tolerance &&
-                    abs(Color.green(p) - tg) <= tolerance &&
-                    abs(Color.blue(p) - tb) <= tolerance
+                val p = pixelAt(x, y)
+                val match = abs(((p shr 16) and 0xFF) - tr) <= tolerance &&
+                    abs(((p shr 8) and 0xFF) - tg) <= tolerance &&
+                    abs((p and 0xFF) - tb) <= tolerance
                 if (match) {
                     run++
                     if (run > best) best = run
@@ -90,6 +114,6 @@ object ImageMatcher {
                 }
             }
         }
-        return best.toFloat() / w
+        return best.toFloat() / width
     }
 }
